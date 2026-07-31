@@ -25,6 +25,7 @@ object HailData {
     const val URL_TRANSLATE = "https://hosted.weblate.org/engage/hail/"
     const val URL_WILD_THINKING_MASTER =
         "https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz=Mzk1NzM5MTIyOQ==#wechat_redirect"
+    const val URL_SECONDARY_DEVELOPMENT_SOURCE = "https://github.com/zzgzhzz-star/Hail"
     const val VERSION = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
     private const val KEY_ID = "id"
     const val KEY_TAG = "tag"

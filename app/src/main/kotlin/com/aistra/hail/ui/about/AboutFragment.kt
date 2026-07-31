@@ -131,7 +131,7 @@ class AboutFragment : MainFragment() {
 
     @Composable
     private fun DeveloperItem() = Column(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = ::openWeChatOfficialAccount)
+        modifier = Modifier.fillMaxWidth()
             .padding(
                 horizontal = dimensionResource(R.dimen.padding_medium),
                 vertical = dimensionResource(R.dimen.padding_medium)
@@ -143,7 +143,14 @@ class AboutFragment : MainFragment() {
             Column {
                 Text(text = stringResource(R.string.secondary_development), style = MaterialTheme.typography.bodyLarge)
                 Text(
+                    text = stringResource(R.string.secondary_development_version),
+                    modifier = Modifier.clickable { HUI.openLink(HailData.URL_SECONDARY_DEVELOPMENT_SOURCE) },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
                     text = stringResource(R.string.follow_wechat_official_account),
+                    modifier = Modifier.clickable(onClick = ::openWeChatOfficialAccount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )

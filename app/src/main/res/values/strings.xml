@@ -166,6 +166,7 @@
     <string name="widget_folder_apps">Apps in freeze list</string>
     <string name="widget_folder_no_checked_apps">Add apps to Hail Home first, then they can appear here.</string>
     <string name="secondary_development">Secondary development: Wild Barbecue Master</string>
+    <string name="secondary_development_version">Secondary development version: v1.10.0-secondary.1</string>
     <string name="follow_wechat_official_account">Tap to follow WeChat official account</string>
     <string name="wechat_official_account">Official account</string>
     <string name="wechat_official_account_name">Wild Barbecue Master</string>
