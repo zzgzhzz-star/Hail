@@ -1,8 +1,12 @@
 /.gradle/
+/.kotlin/
 /.idea/
-/build/
+**/build/
+/Hail/
 /local.properties
 /signing.properties
 *.iml
 *.jks
 *.keystore
+hs_err_pid*.log
+replay_pid*.log

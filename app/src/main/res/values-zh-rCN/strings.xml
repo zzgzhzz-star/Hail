@@ -174,4 +174,6 @@
     <string name="wechat_official_account_msg">野生的烧烤大师公众号已经复制到粘贴板，打开微信搜索即可</string>
     <string name="action_later">稍后再说</string>
     <string name="action_follow">去关注</string>
+    <string name="title_gkd">跳过</string>
+    <string name="open_gkd">打开 GKD</string>
 </resources>

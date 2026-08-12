@@ -21,3 +21,10 @@
 #-renamesourcefileattribute SourceFile
 
 -keep public class com.aistra.hail.xposed.XposedInterface
+
+# These callbacks are invoked by Android's ITaskStackListener Binder stub. The
+# compile-only hidden API stub cannot describe every callback added by vendor
+# Android versions, so R8 otherwise considers the overrides unused and removes
+# them. In particular, losing onTransact() makes task switches crash the whole
+# process with AbstractMethodError on HyperOS.
+-keep class li.songe.gkd.priv.CompatTaskStackListener { *; }

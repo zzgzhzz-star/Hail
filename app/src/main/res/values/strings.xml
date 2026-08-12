@@ -173,4 +173,6 @@
     <string name="wechat_official_account_msg">Wild Barbecue Master official account has been copied to clipboard. Open WeChat and search for it.</string>
     <string name="action_later">Later</string>
     <string name="action_follow">Follow</string>
+    <string name="title_gkd">Skip</string>
+    <string name="open_gkd">Open GKD</string>
 </resources>

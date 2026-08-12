@@ -1,0 +1,12 @@
+{
+  "hail": {
+    "repository": "https://github.com/aistra0528/Hail.git",
+    "branch": "master",
+    "commit": "d502b0a4f96917399e74658ae36bade2b6e309d2"
+  },
+  "gkd": {
+    "repository": "https://github.com/gkd-kit/gkd.git",
+    "branch": "main",
+    "commit": "aec7c4b32b89aebef97c0ca622316f66f781f876"
+  }
+}
