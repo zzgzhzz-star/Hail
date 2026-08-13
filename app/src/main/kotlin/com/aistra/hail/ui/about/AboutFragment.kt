@@ -1,5 +1,6 @@
 package com.aistra.hail.ui.about
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.*
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -63,26 +65,25 @@ class AboutFragment : MainFragment() {
         ) {
             Spacer(modifier = Modifier.height(dimensionResource(R.dimen.padding_medium)))
             Card(
-                onClick = { HUI.openLink(HailData.URL_WHY_FREE_SOFTWARE) },
                 modifier = Modifier.height(dimensionResource(R.dimen.header_height))
                     .padding(horizontal = dimensionResource(R.dimen.padding_medium))
             ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(
-                        dimensionResource(R.dimen.padding_extra_small), Alignment.CenterVertically
-                    ), horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.size(72.dp).background(Color.White, CircleShape),
-                        contentScale = ContentScale.None
+                Row(modifier = Modifier.fillMaxSize()) {
+                    BrandEntry(
+                        icon = R.drawable.ic_launcher_foreground,
+                        iconDescription = stringResource(R.string.app_name),
+                        title = stringResource(R.string.app_name),
+                        subtitle = stringResource(R.string.app_slogan),
+                        onClick = { HUI.openLink(HailData.URL_WHY_FREE_SOFTWARE) },
+                        modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = stringResource(R.string.app_name), style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        text = stringResource(R.string.app_slogan), style = MaterialTheme.typography.bodyMedium
+                    BrandEntry(
+                        icon = R.drawable.ic_gkd_launcher_foreground,
+                        iconDescription = stringResource(R.string.open_gkd),
+                        title = "GKD",
+                        subtitle = stringResource(R.string.title_gkd),
+                        onClick = ::openGkd,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -127,6 +128,35 @@ class AboutFragment : MainFragment() {
             }
             Spacer(modifier = Modifier.height(dimensionResource(R.dimen.padding_medium)))
         }
+    }
+
+    @Composable
+    private fun BrandEntry(
+        icon: Int,
+        iconDescription: String,
+        title: String,
+        subtitle: String,
+        onClick: () -> Unit,
+        modifier: Modifier = Modifier
+    ) = Column(
+        modifier = modifier.fillMaxHeight().clickable(role = Role.Button, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(
+            dimensionResource(R.dimen.padding_extra_small), Alignment.CenterVertically
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = painterResource(icon),
+            contentDescription = iconDescription,
+            modifier = Modifier.size(72.dp).background(Color.White, CircleShape),
+            contentScale = ContentScale.None
+        )
+        Text(text = title, style = MaterialTheme.typography.bodyLarge)
+        Text(text = subtitle, style = MaterialTheme.typography.bodyMedium)
+    }
+
+    private fun openGkd() {
+        startActivity(Intent(requireContext(), li.songe.gkd.MainActivity::class.java))
     }
 
     @Composable

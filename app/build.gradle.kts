@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -20,14 +19,14 @@ android {
     }.getOrDefault("")
 
     namespace = "com.aistra.hail"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.aistra.hail"
-        minSdk = 23
-        targetSdk = 36
-        versionCode = 34
-        versionName = "1.10.0"
+        minSdk = 26
+        targetSdk = 37
+        versionCode = 10000
+        versionName = "雹-GKD-1.0.0"
     }
 
     buildTypes {
@@ -53,20 +52,6 @@ android {
             )
         }
     }
-    applicationVariants.configureEach {
-        outputs.configureEach {
-            (this as? com.android.build.gradle.internal.api.ApkVariantOutputImpl)?.outputFileName =
-                "Hail-v$versionName.apk"
-        }
-    }
-    java {
-        toolchain {
-            languageVersion = JavaLanguageVersion.of(21)
-        }
-    }
-    kotlin {
-        jvmToolchain(21)
-    }
     androidResources {
         generateLocaleConfig = true
         // Do not compress the dex files, so the apk can be imported as a privileged app
@@ -84,12 +69,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":gkd-feature"))
     implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.ui.tooling.preview)
-    debugImplementation(libs.androidx.ui.tooling)
+    implementation(libs.compose.activity)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.icons)
+    implementation(libs.compose.preview)
+    debugImplementation(libs.compose.tooling)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.biometric.ktx)
     implementation(libs.androidx.constraintlayout)
@@ -103,13 +89,13 @@ dependencies {
     implementation(libs.pinyin4j)
     implementation(libs.material)
     implementation(libs.insetter)
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
+    implementation(libs.rikka.shizuku.api)
+    implementation(libs.rikka.shizuku.provider)
     implementation(libs.dhizuku.api)
     implementation(libs.appiconloader)
     implementation(libs.compose.preference)
     implementation(libs.commons.text)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.hiddenapibypass)
+    implementation(libs.lsposed.hiddenapibypass)
     compileOnly(libs.xposed)
 }

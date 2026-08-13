@@ -1,6 +1,5 @@
 package com.aistra.hail
 
-import android.app.Application
 import android.app.UiModeManager
 import android.content.ComponentName
 import android.content.Context
@@ -15,7 +14,7 @@ import com.aistra.hail.services.AutoFreezeService
 import com.aistra.hail.utils.HDhizuku
 import com.aistra.hail.utils.HTarget
 
-class HailApp : Application() {
+class HailApp : li.songe.gkd.App() {
     override fun onCreate() {
         super.onCreate()
         app = this

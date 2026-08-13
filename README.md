@@ -1,15 +1,19 @@
 简体中文 | [English](README_EN.md) | [日本語](README_JP.md)
 
-# 雹 Hail
+# 雹-GKD
 
-> 本仓库为基于 Hail 1.10.0 的二次开发版本，主要增加多用户/工作资料应用支持、桌面大文件夹小组件和关于页二开信息。完整修改说明见 [二次开发更新说明.md](二次开发更新说明.md)。
+> 以雹（Hail）为主体、集成 GKD 广告跳过能力的单安装包版本。沿用 `com.aistra.hail` 包名，保留雹的冻结、多用户与桌面小组件功能，并在“关于”页提供 GKD 独立入口。完整修改说明见 [二次开发更新说明.md](二次开发更新说明.md)。
 
-[![Android CI status](https://github.com/aistra0528/Hail/workflows/Android%20CI/badge.svg)](https://github.com/aistra0528/Hail/actions)
+当前合并版本：`雹-GKD-1.0.0`（versionCode `10000`）。
+
+上游来源与同步基线见 [UPSTREAM.md](UPSTREAM.md)。本仓库通过 GitHub Actions 定期检查 Hail 与 GKD 是否发布了新提交；发现更新后需要按文档完成合并和真机验证。
+
+[![Android CI status](https://github.com/zzgzhzz-star/Hail/actions/workflows/android.yml/badge.svg)](https://github.com/zzgzhzz-star/Hail/actions/workflows/android.yml)
 [![翻译状态](https://hosted.weblate.org/widgets/hail/-/svg-badge.svg)](https://hosted.weblate.org/engage/hail/)
-[![Downloads](https://img.shields.io/github/downloads/aistra0528/Hail/total.svg)](https://github.com/aistra0528/Hail/releases)
-[![License](https://img.shields.io/github/license/aistra0528/Hail)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/zzgzhzz-star/Hail/total.svg)](https://github.com/zzgzhzz-star/Hail/releases)
+[![License](https://img.shields.io/github/license/zzgzhzz-star/Hail)](LICENSE)
 
-雹是一款用于冻结 Android 应用的自由软件。[GitHub Releases](https://github.com/aistra0528/Hail/releases)
+雹是一款用于冻结 Android 应用的自由软件。本合并版本同时内置 GKD 规则匹配与无障碍跳过能力。[GitHub Releases](https://github.com/zzgzhzz-star/Hail/releases)
 
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/com.aistra.hail/)
 
