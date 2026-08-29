@@ -20,11 +20,15 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
--keep public class com.aistra.hail.xposed.XposedInterface
+-dontwarn io.github.libxposed.annotation.**
+-adaptresourcefilecontents META-INF/xposed/java_init.list
+-keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule {
+    public <init>();
+}
 
 # These callbacks are invoked by Android's ITaskStackListener Binder stub. The
 # compile-only hidden API stub cannot describe every callback added by vendor
 # Android versions, so R8 otherwise considers the overrides unused and removes
 # them. In particular, losing onTransact() makes task switches crash the whole
 # process with AbstractMethodError on HyperOS.
--keep class li.songe.gkd.priv.CompatTaskStackListener { *; }
+-keep class li.gkd.app.priv.CompatTaskStackListener { *; }

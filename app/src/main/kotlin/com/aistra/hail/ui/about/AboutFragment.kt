@@ -156,7 +156,7 @@ class AboutFragment : MainFragment() {
     }
 
     private fun openGkd() {
-        startActivity(Intent(requireContext(), li.songe.gkd.MainActivity::class.java))
+        startActivity(Intent(requireContext(), li.gkd.app.MainActivity::class.java))
     }
 
     @Composable

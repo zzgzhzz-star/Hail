@@ -1,14 +1,17 @@
 import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import com.android.build.api.dsl.LibraryExtension
 import com.android.build.gradle.AppPlugin
 import com.android.build.gradle.LibraryPlugin
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
     alias(libs.plugins.google.ksp) apply false
     alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.android.kotlin.multiplatform.library) apply false
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.androidx.room) apply false
     alias(libs.plugins.kotlin.serialization) apply false
@@ -41,8 +44,12 @@ object Cfg {
         "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi",
         "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi",
         "-XXLanguage:+MultiDollarInterpolation",
+        "-XXLanguage:+ExplicitBackingFields",
     )
 }
+
+val androidKmpLibraryPluginId =
+    libs.plugins.android.kotlin.multiplatform.library.get().pluginId
 
 subprojects {
     tasks.withType<KotlinJvmCompile>().configureEach {
@@ -86,5 +93,17 @@ subprojects {
                 targetCompatibility = Cfg.targetVersion
             }
         }
+    }
+    plugins.withId(androidKmpLibraryPluginId) {
+        extensions.getByType(KotlinMultiplatformExtension::class.java)
+            .targets
+            .withType(KotlinMultiplatformAndroidLibraryTarget::class.java)
+            .configureEach {
+                compileSdk = Cfg.compileSdk
+                minSdk = Cfg.minSdk
+                compilerOptions {
+                    jvmTarget.set(Cfg.kotlinTargetVersion)
+                }
+            }
     }
 }

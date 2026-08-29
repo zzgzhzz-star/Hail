@@ -14,7 +14,7 @@ import com.aistra.hail.services.AutoFreezeService
 import com.aistra.hail.utils.HDhizuku
 import com.aistra.hail.utils.HTarget
 
-class HailApp : li.songe.gkd.App() {
+class HailApp : li.gkd.app.App() {
     override fun onCreate() {
         super.onCreate()
         app = this

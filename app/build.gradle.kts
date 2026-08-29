@@ -25,8 +25,8 @@ android {
         applicationId = "com.aistra.hail"
         minSdk = 26
         targetSdk = 37
-        versionCode = 10000
-        versionName = "雹-GKD-1.0.0"
+        versionCode = 10001
+        versionName = "雹-GKD-1.1.0"
     }
 
     buildTypes {
@@ -97,5 +97,5 @@ dependencies {
     implementation(libs.commons.text)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.lsposed.hiddenapibypass)
-    compileOnly(libs.xposed)
+    compileOnly(libs.libxposed.api)
 }

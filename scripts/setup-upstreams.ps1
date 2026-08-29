@@ -20,6 +20,6 @@ foreach ($entry in $upstreams.GetEnumerator()) {
 }
 
 if ($Fetch) {
-    git fetch --prune hail-upstream master
+    git fetch --prune hail-upstream main
     git fetch --prune gkd-upstream main
 }
