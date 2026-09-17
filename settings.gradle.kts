@@ -19,6 +19,7 @@ rootProject.name = "Hail-GKD"
 include(
     ":app",
     ":gkd-feature",
+    ":gkd-db",
     ":hidden-api",
     ":selector",
 )

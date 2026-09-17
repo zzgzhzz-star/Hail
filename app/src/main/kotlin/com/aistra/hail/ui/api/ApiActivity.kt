@@ -1,6 +1,5 @@
 package com.aistra.hail.ui.api
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager.NameNotFoundException
 import android.net.Uri
@@ -31,10 +30,7 @@ import com.aistra.hail.app.AppManager
 import com.aistra.hail.app.HailApi
 import com.aistra.hail.app.HailData
 import com.aistra.hail.ui.theme.AppTheme
-import com.aistra.hail.utils.HPackages
-import com.aistra.hail.utils.HShortcuts
-import com.aistra.hail.utils.HTarget
-import com.aistra.hail.utils.HUI
+import com.aistra.hail.utils.*
 import com.aistra.hail.widgets.HailFolderWidgetStore
 import com.aistra.hail.work.HWork.setAutoFreeze
 
@@ -178,8 +174,7 @@ class ApiActivity : ComponentActivity() {
                 else "android.intent.extra.PACKAGE_NAME"
             )
         }?.also {
-            HPackages.getApplicationInfoOrNull(it, userId = requireUserId)
-                ?: throw NameNotFoundException(getString(R.string.app_not_installed))
+            HPackages.getApplicationInfoOrNull(it, userId = requireUserId) ?: throw NameNotFoundException(getString(R.string.app_not_installed))
         } ?: throw IllegalArgumentException("Package must not be null")
 
     private val requireUserId: Int
@@ -201,23 +196,14 @@ class ApiActivity : ComponentActivity() {
     private fun launchApp(pkg: String, tagId: Int? = null) {
         if (tagId != null) setListFrozen(false, HailData.checkedList.filter { tagId in it.tagIdList })
         val userId = requireUserId
-        if (AppManager.isAppFrozen(pkg, userId) && AppManager.setAppFrozen(pkg, false, userId)) {
+        if (AppManager.isAppFrozen(pkg, userId)) {
+            if (!AppManager.setAppFrozen(pkg, false, userId)) {
+                throw IllegalStateException(getString(R.string.permission_denied))
+            }
             app.setAutoFreezeService()
             HailFolderWidgetStore.updateAll(this)
         }
-        if (userId == HPackages.myUserId) {
-            packageManager.getLaunchIntentForPackage(pkg)?.let {
-                HShortcuts.addDynamicShortcut(pkg)
-                startActivity(it)
-            } ?: throw ActivityNotFoundException(getString(R.string.activity_not_found))
-        } else {
-            val launcher = getSystemService(android.content.pm.LauncherApps::class.java)
-            val user = HPackages.userHandle(userId)
-            val activityInfo = launcher.getActivityList(pkg, user).firstOrNull()
-                ?: throw ActivityNotFoundException(getString(R.string.activity_not_found))
-            HShortcuts.addDynamicShortcut(pkg)
-            launcher.startMainActivity(activityInfo.componentName, user, null, null)
-        }
+        HAppLauncher.launch(this, pkg, userId)
     }
 
     private fun setAppFrozen(pkg: String, frozen: Boolean) = when {

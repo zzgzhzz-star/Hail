@@ -5,13 +5,9 @@ import androidx.annotation.RequiresApi
 
 object HShell {
     fun execute(command: String, root: Boolean): Pair<Int, String?> = runCatching {
-        Runtime.getRuntime().exec(if (root) "su" else "sh").run {
-            outputStream.use {
-                it.write(command.toByteArray())
-            }
-            waitFor() to (if (inputStream.available() > 0) inputStream else errorStream).use {
-                it.bufferedReader().readText()
-            }.also { destroy() }
+        ProcessBuilder(if (root) "su" else "sh").redirectErrorStream(true).start().run {
+            outputStream.use { it.write(command.toByteArray()) }
+            waitFor() to inputStream.bufferedReader().use { it.readText() }.also { destroy() }
         }
     }.getOrElse { 1 to it.stackTraceToString() }
 
