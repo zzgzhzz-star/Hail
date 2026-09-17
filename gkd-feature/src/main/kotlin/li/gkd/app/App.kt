@@ -71,7 +71,8 @@ private val applicationInfo by lazy {
 }
 
 private fun getMetaString(key: String): String {
-    return applicationInfo.metaData.getString(key) ?: error("Missing meta-data: $key")
+    return applicationInfo.metaData.get(key)?.toString()
+        ?: error("Missing meta-data: $key")
 }
 
 // https://github.com/android-cs/16/blob/main/packages/SettingsLib/src/com/android/settingslib/accessibility/AccessibilityUtils.java#L41

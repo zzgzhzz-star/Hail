@@ -25,8 +25,8 @@ android {
         applicationId = "com.aistra.hail"
         minSdk = 26
         targetSdk = 37
-        versionCode = 10001
-        versionName = "雹-GKD-1.1.0"
+        versionCode = 10003
+        versionName = "雹-GKD-1.1.2"
     }
 
     buildTypes {

@@ -160,10 +160,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
         if (info.applicationInfo == null) {
             Snackbar.make(activity.fab, R.string.app_not_installed, Snackbar.LENGTH_LONG)
-                .setAction(R.string.action_remove_home) { removeCheckedApp(info.packageName) }.show()
+                .setAction(R.string.action_remove_home) { removeCheckedApp(info) }.show()
             return
         }
-        launchApp(info.packageName)
+        launchApp(info)
     }
 
     override fun onItemLongClick(info: AppInfo): Boolean {
@@ -176,7 +176,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             return true
         }
         val pkg = info.packageName
-        val frozen = AppManager.isAppFrozen(pkg)
+        val frozen = AppManager.isAppFrozen(pkg, info.userId)
         val action = getString(if (frozen) R.string.action_unfreeze else R.string.action_freeze)
         MaterialAlertDialogBuilder(activity).setTitle(info.name).setItems(
             resources.getStringArray(R.array.home_action_entries).filter {
@@ -190,7 +190,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }.toTypedArray()
         ) { _, which ->
             when (which) {
-                0 -> launchApp(pkg)
+                0 -> launchApp(info)
                 1 -> setListFrozen(!frozen, listOf(info))
                 2 -> {
                     val values = resources.getIntArray(R.array.deferred_task_values)
@@ -200,12 +200,12 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     }
                     MaterialAlertDialogBuilder(activity).setTitle(R.string.action_deferred_task)
                         .setItems(entries) { _, i ->
-                            HWork.setDeferredFrozen(pkg, !frozen, values[i].toLong())
+                            HWork.setDeferredFrozen(pkg, !frozen, values[i].toLong(), info.userId)
                             Snackbar.make(
                                 activity.fab, resources.getQuantityString(
                                     R.plurals.msg_deferred_task, values[i], values[i], action, info.name
                                 ), Snackbar.LENGTH_INDEFINITE
-                            ).setAction(R.string.action_undo) { HWork.cancelWork(pkg) }.show()
+                            ).setAction(R.string.action_undo) { HWork.cancelWork("${pkg}#${info.userId}") }.show()
                         }.setNegativeButton(android.R.string.cancel, null).show()
                 }
 
@@ -230,22 +230,22 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                                 info,
                                 pkg,
                                 info.name,
-                                HailApi.getIntentForPackage(HailApi.ACTION_LAUNCH, pkg).addTag(HailData.tags[index].first)
+                                HailApi.getIntentForPackage(HailApi.ACTION_LAUNCH, pkg, info.userId).addTag(HailData.tags[index].first)
                             )
                         }.setPositiveButton(R.string.action_skip) { _, _ ->
                             HShortcuts.addPinShortcut(
-                                info, pkg, info.name, HailApi.getIntentForPackage(HailApi.ACTION_LAUNCH, pkg)
+                                info, pkg, info.name, HailApi.getIntentForPackage(HailApi.ACTION_LAUNCH, pkg, info.userId)
                             )
                         }.setNegativeButton(android.R.string.cancel, null).show()
                 } ?: HShortcuts.addPinShortcut(
-                    info, pkg, info.name, HailApi.getIntentForPackage(HailApi.ACTION_LAUNCH, pkg)
+                    info, pkg, info.name, HailApi.getIntentForPackage(HailApi.ACTION_LAUNCH, pkg, info.userId)
                 )
 
                 7 -> exportToClipboard(listOf(info))
-                8 -> removeCheckedApp(pkg)
+                8 -> removeCheckedApp(info)
                 9 -> {
                     setListFrozen(false, listOf(info), false)
-                    if (!AppManager.isAppFrozen(pkg)) removeCheckedApp(pkg)
+                    if (!AppManager.isAppFrozen(pkg, info.userId)) removeCheckedApp(info)
                 }
             }
         }.setNeutralButton(R.string.action_details) { _, _ ->
@@ -270,7 +270,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 if (checked) info.tagIdList.add(HailData.tags[index].second)
             }
             if (info.tagIdList.isEmpty()) {
-                removeCheckedApp(info.packageName, false)
+                removeCheckedApp(info, false)
             }
             HailData.saveApps()
             updateCurrentList()
@@ -320,7 +320,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 }
 
                 4 -> {
-                    selectedList.forEach { removeCheckedApp(it.packageName, false) }
+                    selectedList.forEach { removeCheckedApp(it, false) }
                     HailData.saveApps()
                     deselect()
                 }
@@ -328,7 +328,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 5 -> {
                     setListFrozen(false, selectedList, false)
                     selectedList.forEach {
-                        if (!AppManager.isAppFrozen(it.packageName)) removeCheckedApp(it.packageName, false)
+                        if (!AppManager.isAppFrozen(it.packageName, it.userId)) removeCheckedApp(it, false)
                     }
                     HailData.saveApps()
                     deselect()
@@ -370,7 +370,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                         ToggleableState.Indeterminate -> {}
                     }
                 }
-                if (it.tagIdList.isEmpty()) removeCheckedApp(it.packageName, false)
+                if (it.tagIdList.isEmpty()) removeCheckedApp(it, false)
             }
             HailData.saveApps()
             deselect()
@@ -409,17 +409,20 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
     }
 
-    private fun launchApp(packageName: String) {
-        if (AppManager.isAppFrozen(packageName) && AppManager.setAppFrozen(packageName, false)) {
+    private fun launchApp(info: AppInfo) {
+        if (AppManager.isAppFrozen(info.packageName, info.userId)) {
+            if (!AppManager.setAppFrozen(info.packageName, false, info.userId)) {
+                HUI.showToast(R.string.permission_denied)
+                return
+            }
             updateCurrentList()
         }
-        if (HailData.workingMode == HailData.MODE_ISLAND_HIDE) {
-            HIsland.ensureLaunchIntentExists(packageName)
+        runCatching {
+            HAppLauncher.launch(requireContext(), info.packageName, info.userId)
+        }.onFailure {
+            HLog.e(it)
+            HUI.showToast(R.string.activity_not_found)
         }
-        app.packageManager.getLaunchIntentForPackage(packageName)?.let {
-            HShortcuts.addDynamicShortcut(packageName)
-            startActivity(it)
-        } ?: HUI.showToast(R.string.activity_not_found)
     }
 
     private fun setListFrozen(
@@ -438,7 +441,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 }
             }
         }
-        val filtered = list.filter { AppManager.isAppFrozen(it.packageName) != frozen }
+        val filtered = list.filter { AppManager.isAppFrozen(it.packageName, it.userId) != frozen }
         when (val result = AppManager.setListFrozen(frozen, *filtered.toTypedArray())) {
             null -> HUI.showToast(R.string.permission_denied)
             else -> {
@@ -489,7 +492,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     val tagIdToRemove = HailData.tags[position].second
                     pagerAdapter.currentList.forEach {
                         if (it.tagIdList.remove(tagIdToRemove) && it.tagIdList.isEmpty()) {
-                            removeCheckedApp(it.packageName, false)
+                            removeCheckedApp(it, false)
                         }
                     }
                     HailData.tags.removeAt(position)
@@ -536,13 +539,13 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private suspend fun importFrozenApp() = withContext(Dispatchers.IO) {
-        HPackages.getInstalledApplications().map { it.packageName }
-            .filter { AppManager.isAppFrozen(it) && !HailData.isChecked(it) }
-            .onEach { HailData.addCheckedApp(it, tag?.second ?: 0, false) }.size
+        HPackages.getInstalledApps()
+            .filter { AppManager.isAppFrozen(it.packageName, it.userId) && !HailData.isChecked(it.packageName, it.userId) }
+            .onEach { HailData.addCheckedApp(it.packageName, tag?.second ?: 0, false, it.userId) }.size
     }
 
-    private fun removeCheckedApp(packageName: String, saveApps: Boolean = true) {
-        HailData.removeCheckedApp(packageName, saveApps)
+    private fun removeCheckedApp(info: AppInfo, saveApps: Boolean = true) {
+        HailData.removeCheckedApp(info.packageName, saveApps, info.userId)
         if (saveApps) updateCurrentList()
     }
 
