@@ -2,6 +2,8 @@ package li.gkd.app.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -46,6 +51,9 @@ fun SubsItemCard(
     index: Int,
     isSelectedMode: Boolean,
     isSelected: Boolean,
+    selectionEnabled: Boolean = true,
+    handlesLongPress: Boolean = true,
+    onSelect: () -> Unit,
     loadError: Exception?,
     refreshError: Exception?,
     refreshing: Boolean,
@@ -57,7 +65,7 @@ fun SubsItemCard(
     val onClick = {
         if (!dragged) {
             if (isSelectedMode) {
-                onSelectedChange?.invoke()
+                if (selectionEnabled) onSelectedChange?.invoke()
             } else if (!refreshing) {
                 onOpen()
             }
@@ -72,20 +80,41 @@ fun SubsItemCard(
         tween()
     )
     Card(
-        onClick = onClick,
         modifier = modifier
             .padding(16.dp, 4.dp)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                enabled = !isSelectedMode || selectionEnabled,
+                onClick = onClick,
+                onLongClick = if (handlesLongPress && selectionEnabled) onSelect else null,
+            )
             .semantics {
                 stateDescription = if (isSelectedMode) {
                     if (isSelected) "已选中" else "未选中"
                 } else {
                     if (subsItem.enable) "已启用" else "已禁用"
                 }
-                this.onClick(label = "查看订阅详情", action = null)
-                this.onLongClick(label = "进入多选模式", action = null)
+                if (isSelectedMode) {
+                    selected = isSelected
+                    role = Role.Checkbox
+                }
+                this.onClick(
+                    label = if (isSelectedMode) {
+                        if (isSelected) "取消选中" else "选中"
+                    } else "查看订阅详情",
+                    action = null,
+                )
+                if (selectionEnabled) {
+                    this.onLongClick(
+                        label = if (isSelectedMode) "选中" else "进入多选模式",
+                    ) {
+                        onSelect()
+                        true
+                    }
+                }
             },
         shape = MaterialTheme.shapes.small,
-        interactionSource = interactionSource,
         colors = CardDefaults.cardColors(
             containerColor = containerColor.value
         ),
@@ -184,44 +213,20 @@ fun SubsItemCard(
                 }
             }
             Spacer(modifier = Modifier.width(4.dp))
-            val percent = usePercentAnimatable(!isSelectedMode)
-            val switchModifier = Modifier.graphicsLayer(
-                alpha = 0.5f + (1 - 0.5f) * percent.value,
-            ).run {
-                if (isSelectedMode) {
-                    minimumInteractiveComponentSize()
-                } else {
-                    this
-                }
+            if (isSelectedMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = null,
+                    enabled = selectionEnabled,
+                    modifier = Modifier.minimumInteractiveComponentSize(),
+                )
+            } else {
+                PerfSwitch(
+                    key = subsItem.id,
+                    checked = subsItem.enable,
+                    onCheckedChange = throttle(fn = onCheckedChange),
+                )
             }
-            PerfSwitch(
-                key = subsItem.id,
-                modifier = switchModifier,
-                checked = subsItem.enable,
-                onCheckedChange = if (isSelectedMode) null else throttle(fn = onCheckedChange),
-            )
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

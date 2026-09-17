@@ -92,7 +92,6 @@ class ActivityResultRequests {
                 requests?.cancelPendingRequests()
             }
             requests = null
-            owner.lifecycle.removeObserver(this)
         }
 
         private fun <I, O> registerLauncher(

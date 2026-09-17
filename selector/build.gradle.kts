@@ -4,29 +4,33 @@ plugins {
 }
 
 kotlin {
+    explicitApi()
     jvm {}
     js {
+        outputModuleName = project.name
         compilerOptions {
             target.set("es2015")
         }
         binaries.executable()
         useEsModules()
         generateTypeScriptDefinitions()
-        browser {}
+        nodejs()
     }
     sourceSets {
         all {
             languageSettings.optIn("kotlin.js.ExperimentalJsExport")
+            languageSettings.optIn("kotlin.js.ExperimentalJsStatic")
+            languageSettings.optIn("kotlin.js.ExperimentalJsCollectionsApi")
         }
         commonMain {
             dependencies {
                 implementation(libs.kotlin.stdlib)
             }
         }
-        jvmTest {
+        commonTest {
             dependencies {
-                implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlin.test)
+                implementation(libs.json5)
             }
         }
     }

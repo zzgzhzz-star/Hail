@@ -18,7 +18,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.MutableStateFlow
-import li.gkd.app.util.openUri
+import li.gkd.app.util.IntentUtils
 import li.gkd.app.util.throttle
 
 private data class TextDialogRequest(
@@ -43,7 +43,7 @@ class TextDialogState {
                 openable = true,
             )
         } else {
-            openUri(url)
+            IntentUtils.openUri(url)
         }
     }
 
@@ -53,7 +53,7 @@ class TextDialogState {
 
     private fun open(request: TextDialogRequest) {
         dismiss()
-        openUri(request.text)
+        IntentUtils.openUri(request.text)
     }
 
     @Composable

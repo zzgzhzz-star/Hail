@@ -5,8 +5,8 @@ import android.app.ITaskStackListener
 import android.content.ComponentName
 import android.os.Parcel
 import android.view.Display
+import li.gkd.app.a11y.A11yState
 import li.gkd.app.a11y.ActivityScene
-import li.gkd.app.a11y.topActivityFlow
 import li.gkd.app.a11y.updateTopActivity
 import li.gkd.app.util.AndroidTarget
 
@@ -19,11 +19,11 @@ object CompatTaskStackListener : ITaskStackListener.Stub() {
         true
     }
 
-    override fun onTaskStackChanged(): Unit = synchronized(topActivityFlow) {
-        val cpn = privilegeContextFlow.value?.topCpn() ?: return
+    override fun onTaskStackChanged(): Unit = A11yState.withTopActivityLock {
+        val cpn = privilegeContextFlow.value?.topCpn() ?: return@withTopActivityLock
         if (lastFront.first > 0 && lastFront.second == cpn && System.currentTimeMillis() - lastFront.first > 200) {
             lastFront = defaultFront
-            return
+            return@withTopActivityLock
         }
         updateTopActivity(
             appId = cpn.packageName,
@@ -36,8 +36,8 @@ object CompatTaskStackListener : ITaskStackListener.Stub() {
     private var lastFront = defaultFront
     private fun onTaskMovedToFrontCompat(
         cpn: ComponentName? = null
-    ): Unit = synchronized(topActivityFlow) {
-        val cpn = cpn ?: privilegeContextFlow.value?.topCpn() ?: return
+    ): Unit = A11yState.withTopActivityLock {
+        val cpn = cpn ?: privilegeContextFlow.value?.topCpn() ?: return@withTopActivityLock
         lastFront = System.currentTimeMillis() to cpn
         updateTopActivity(
             appId = cpn.packageName,
@@ -46,11 +46,11 @@ object CompatTaskStackListener : ITaskStackListener.Stub() {
         )
     }
 
-    override fun onTaskMovedToFront(taskId: Int) {
-        val taskInfo = privilegeContextFlow.value?.topTask() ?: return
+    override fun onTaskMovedToFront(taskId: Int): Unit = A11yState.withTopActivityLock {
+        val taskInfo = privilegeContextFlow.value?.topTask() ?: return@withTopActivityLock
         @Suppress("DEPRECATION")
         if (taskInfo.id != taskId) {
-            return
+            return@withTopActivityLock
         }
         onTaskMovedToFrontCompat(taskInfo.topActivity)
     }

@@ -32,7 +32,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import li.gkd.app.util.copyText
+import li.gkd.app.util.ToastUtils.copyText
 import li.gkd.app.util.throttle
 
 @Composable
@@ -123,6 +123,9 @@ fun CopyIconOverlay(
 fun CopyTextCard(
     text: String,
     modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
 ) {
     val shape = MaterialTheme.shapes.extraSmall
     CopyableText(
@@ -130,9 +133,9 @@ fun CopyTextCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(containerColor),
         contentPadding = PaddingValues(8.dp),
-        textStyle = MaterialTheme.typography.bodyLarge,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        textStyle = textStyle,
+        contentColor = contentColor,
     )
 }

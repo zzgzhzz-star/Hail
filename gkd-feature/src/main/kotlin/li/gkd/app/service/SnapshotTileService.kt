@@ -2,38 +2,36 @@ package li.gkd.app.service
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.isActive
-import li.gkd.app.a11y.A11yRuleEngine
+import li.gkd.app.a11y.A11yRuntime
 import li.gkd.app.appScope
+import li.gkd.app.ui.share.launchUi
 import li.gkd.app.util.LogUtils
 import li.gkd.app.snapshot.SnapshotCapture
-import li.gkd.app.util.launchTry
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 
-class SnapshotTileService() : BaseTileService() {
-    override val activeFlow = MutableStateFlow(false)
+class SnapshotTileService : BaseTileService() {
+    override val activeFlow = flowOf(false)
 
-    init {
-        onTileClicked { execSnapshot() }
-    }
+    override fun onTileClick() = execSnapshot()
 }
 
 private fun execSnapshot() {
     LogUtils.d("SnapshotTileService::onClick")
-    val service = A11yRuleEngine.instance
+    val service = A11yRuntime.service
     if (service == null) {
-        A11yRuleEngine.performActionBack()
+        A11yRuntime.performActionBack()
         toast("服务未连接", forced = true)
         return
     }
-    appScope.launchTry(Dispatchers.IO) {
-        val oldAppId = service.safeActiveWindowAppId
+    appScope.launchUi(Dispatchers.IO) {
+        val oldAppId = A11yRuntime.getRoot(service)?.packageName?.toString()
 
         if (oldAppId == null) {
-            A11yRuleEngine.performActionBack()
+            A11yRuntime.performActionBack()
             toast("获取信息根节点失败", forced = true)
-            return@launchTry
+            return@launchUi
         }
 
         val startTime = System.currentTimeMillis()
@@ -43,7 +41,7 @@ private fun execSnapshot() {
 
         var ok = false
         while (isActive) {
-            val latestAppId = service.safeActiveWindowAppId
+            val latestAppId = A11yRuntime.getRoot(service)?.packageName?.toString()
             if (latestAppId == null) {
                 // https://github.com/gkd-kit/gkd/issues/713
                 delay(250)
@@ -54,10 +52,10 @@ private fun execSnapshot() {
             } else if (latestAppId != oldAppId) {
                 ok = true
                 LogUtils.d("SnapshotTileService::eventExecutor.execute")
-                appScope.launchTry { SnapshotCapture.capture(forcedCropStatusBar = true) }
+                SnapshotCapture.capture(forcedCropStatusBar = true)
                 break
             } else {
-                A11yRuleEngine.performActionBack()
+                A11yRuntime.performActionBack()
                 delay(500)
                 if (timeout()) {
                     toast("未检测到界面切换，捕获失败", forced = true)
@@ -66,7 +64,7 @@ private fun execSnapshot() {
             }
         }
         if (!ok) {
-            A11yRuleEngine.performActionBack()
+            A11yRuntime.performActionBack()
         }
     }
 }

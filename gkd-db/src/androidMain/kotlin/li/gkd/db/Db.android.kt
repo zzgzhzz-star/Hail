@@ -13,6 +13,7 @@ fun Db.initialize(context: Context, databasePath: String) {
             AppDb::class.java,
             databasePath,
         )
+            .addMigrations(Migration14To15)
             .setDriver(AndroidSQLiteDriver())
             .setQueryCoroutineContext(Dispatchers.IO)
             .build()

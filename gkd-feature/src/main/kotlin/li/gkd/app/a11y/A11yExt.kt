@@ -4,36 +4,40 @@ import android.content.ComponentName
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.stateIn
 import li.gkd.app.app
 import li.gkd.app.contentObserver
 import li.gkd.app.service.A11yService
 import li.gkd.app.util.AndroidTarget
-import li.gkd.app.util.OnSimpleLife
 import li.gkd.app.util.mapState
-import li.gkd.selector.initDefaultTypeInfo
+import li.gkd.selector.createDefaultSelectorTypeModel
 import kotlin.contracts.contract
 
-context(context: OnSimpleLife)
-fun useEnabledA11yServicesFlow(): StateFlow<Set<ComponentName>> {
-    val stateFlow = MutableStateFlow(app.getSecureA11yServices())
-    val contextObserver = contentObserver {
-        stateFlow.value = app.getSecureA11yServices()
-    }
-    app.registerObserver(
-        Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
-        contextObserver
-    )
-    context.onDestroyed {
-        app.unregisterObserver(contextObserver)
-    }
-    return stateFlow
+fun useEnabledA11yServicesFlow(scope: CoroutineScope): StateFlow<Set<ComponentName>> {
+    val initialValue = app.getSecureA11yServices()
+    return callbackFlow {
+        val contextObserver = contentObserver {
+            trySend(app.getSecureA11yServices())
+        }
+        app.registerObserver(
+            Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+            contextObserver
+        )
+        trySend(initialValue)
+        awaitClose { app.unregisterObserver(contextObserver) }
+    }.stateIn(scope, SharingStarted.Eagerly, initialValue)
 }
 
-context(context: OnSimpleLife)
-fun useA11yServiceEnabledFlow(servicesFlow: StateFlow<Set<ComponentName>> = useEnabledA11yServicesFlow()): StateFlow<Boolean> {
-    return servicesFlow.mapState(context.scope) {
+fun useA11yServiceEnabledFlow(
+    scope: CoroutineScope,
+    servicesFlow: StateFlow<Set<ComponentName>> = useEnabledA11yServicesFlow(scope),
+): StateFlow<Boolean> {
+    return servicesFlow.mapState(scope) {
         it.contains(A11yService.a11yCn)
     }
 }
@@ -87,7 +91,7 @@ fun AccessibilityNodeInfo.isExpired(expiryMillis: Long): Boolean {
     return (System.currentTimeMillis() - generatedTime) > expiryMillis
 }
 
-val typeInfo by lazy { initDefaultTypeInfo().globalType }
+val selectorTypeModel by lazy { createDefaultSelectorTypeModel() }
 
 val AccessibilityNodeInfo.compatChecked: Boolean?
     get() = if (AndroidTarget.BAKLAVA) {

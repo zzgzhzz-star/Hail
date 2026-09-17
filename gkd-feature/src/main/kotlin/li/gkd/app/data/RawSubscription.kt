@@ -14,19 +14,21 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
-import li.gkd.app.a11y.typeInfo
+import li.gkd.app.a11y.selectorTypeModel
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ScreenUtils
-import li.gkd.app.util.appInfoMapFlow
+import li.gkd.app.data.appinfo.AppInfoRepository
 import li.gkd.app.util.distinctByIfAny
 import li.gkd.app.util.filterIfNotAll
 import li.gkd.app.util.json
 import li.gkd.app.util.toJson5String
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 import li.gkd.db.LOCAL_SUBS_IDS
-import li.gkd.db.SubsConfig
+import li.gkd.db.RuleGroupType
 import li.songe.json5.Json5
 import li.gkd.selector.Selector
+import li.gkd.selector.SelectorCompileResult
+import li.gkd.selector.SelectorTypeResult
 import net.objecthunter.exp4j.Expression
 import net.objecthunter.exp4j.ExpressionBuilder
 import java.util.Objects
@@ -115,7 +117,7 @@ data class RawSubscription(
     fun getApp(appId: String): RawApp {
         return apps.find { a -> a.id == appId } ?: RawApp(
             id = appId,
-            name = appInfoMapFlow.value[appId]?.name,
+            name = AppInfoRepository.appInfoMapFlow.value[appId]?.name,
             groups = emptyList()
         )
     }
@@ -374,8 +376,8 @@ data class RawSubscription(
 
         val groupType: Int
             get() = when (this) {
-                is RawAppGroup -> SubsConfig.AppGroupType
-                is RawGlobalGroup -> SubsConfig.GlobalGroupType
+                is RawAppGroup -> RuleGroupType.App
+                is RawGlobalGroup -> RuleGroupType.Global
             }
     }
 
@@ -605,13 +607,19 @@ data class RawSubscription(
                 r.getAllSelectorStrings()
             }
             allSelectorStrings.forEach { source ->
-                try {
-                    val selector = Selector.parse(source)
-                    selector.checkType(typeInfo)
-                    cacheMap[source] = selector
-                } catch (e: Exception) {
-                    LogUtils.d("非法选择器", source, e.toString())
-                    return "非法选择器\n$source\n${e.message}"
+                val selector = when (val result = Selector.compile(source)) {
+                    is SelectorCompileResult.Success -> result.value
+                    is SelectorCompileResult.Failure -> {
+                        LogUtils.d("非法选择器", source, result.error.toString())
+                        return "非法选择器\n$source\n${result.error.message}"
+                    }
+                }
+                when (val result = selector.validateType(selectorTypeModel)) {
+                    is SelectorTypeResult.Success -> cacheMap[source] = result.value
+                    is SelectorTypeResult.Failure -> {
+                        LogUtils.d("非法选择器", source, result.error.toString())
+                        return "非法选择器\n$source\n${result.error.message}"
+                    }
                 }
             }
             rules.forEach { r ->

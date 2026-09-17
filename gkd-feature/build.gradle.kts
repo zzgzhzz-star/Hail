@@ -3,9 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlinx.atomicfu)
     alias(libs.plugins.remap)
-    alias(libs.plugins.loc)
+    alias(libs.plugins.codeorigin)
 }
 
 android {
@@ -23,9 +22,9 @@ android {
         // Embedded in Hail: never advertise or install a standalone GKD APK.
         manifestPlaceholders["channel"] = "embedded"
         manifestPlaceholders["buildKey"] = ""
-        manifestPlaceholders["commitId"] = "1517080e46f9f72d3bf53f81fc0348e117a47902"
-        manifestPlaceholders["commitTime"] = "1787822814"
-        manifestPlaceholders["tagName"] = "1.12.1"
+        manifestPlaceholders["commitId"] = "f6c42e2f0a8926df295d33f6f086748424dc3111"
+        manifestPlaceholders["commitTime"] = "1788713442"
+        manifestPlaceholders["tagName"] = ""
         resValue("bool", "is_accessibility_tool", "true")
     }
 
@@ -56,10 +55,6 @@ composeCompiler {
     stabilityConfigurationFiles.addAll(
         rootProject.layout.projectDirectory.file("stability_config.conf"),
     )
-}
-
-loc {
-    template = "{packageName}.{methodName}({fileName}:{lineNumber})"
 }
 
 dependencies {
@@ -93,6 +88,8 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.sqlite.framework)
     implementation(libs.androidx.concurrent.futures)
 
     remapApi(project(":hidden-api"))
@@ -127,7 +124,7 @@ dependencies {
     implementation(libs.permissions)
     implementation(libs.device)
     implementation(libs.json5)
-    compileOnly(libs.loc.annotation)
+    compileOnly(libs.codeorigin)
     implementation(libs.kevinnzouWebview) {
         exclude(group = "com.google.android.material", module = "material")
     }

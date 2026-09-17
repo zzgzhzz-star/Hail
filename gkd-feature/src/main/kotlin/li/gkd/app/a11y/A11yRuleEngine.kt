@@ -1,13 +1,9 @@
 package li.gkd.app.a11y
 
-import android.accessibilityservice.AccessibilityService
-import android.graphics.Bitmap
 import android.util.Log
 import android.view.Display
-import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
 import kotlinx.coroutines.Dispatchers
@@ -16,32 +12,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import li.gkd.app.META
 import li.gkd.app.data.ActionPerformer
-import li.gkd.app.data.ActionResult
 import li.gkd.app.data.AppRule
-import li.gkd.app.data.GkdAction
 import li.gkd.app.data.ResolvedRule
-import li.gkd.app.data.RpcError
 import li.gkd.app.data.RuleStatus
-import li.gkd.app.isActivityVisible
-import li.gkd.app.service.A11yService
+import li.gkd.app.platform.lifecycle.MainActivityVisibility
 import li.gkd.app.service.EventService
 import li.gkd.app.service.topAppIdFlow
 import li.gkd.app.priv.privilegeContextFlow
-import li.gkd.app.priv.uiAutomationFlow
-import li.gkd.app.store.actualBlockA11yAppList
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.actualBlockA11yAppList
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.util.AndroidTarget
-import li.gkd.app.util.AutomatorModeOption
-import li.gkd.app.util.launchTry
-import li.gkd.app.util.runMainPost
-import li.gkd.app.util.showActionToast
+import li.gkd.app.util.launchLogged
+import li.gkd.app.util.ToastUtils.showActionToast
 import li.gkd.app.util.systemUiAppId
-import li.gkd.selector.MatchOption
-import li.gkd.selector.Selector
 import java.util.concurrent.Executors
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
@@ -52,44 +38,20 @@ private val eventDispatcher = Executors.newSingleThreadExecutor().asCoroutineDis
 private val queryDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 private val actionDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
-private val latestServiceMode = atomic(0)
-private val latestServiceTime = atomic(0L)
-
-class A11yRuleEngine(val service: A11yCommonImpl) {
-    private val a11yContext = A11yContext(this)
-    private val effective get() = latestServiceMode.value == service.mode.value
-    private val hasOthersService = when (service.mode) {
-        AutomatorModeOption.A11yMode -> uiAutomationFlow.value != null
-        AutomatorModeOption.AutomationMode -> A11yService.instance != null
-    }
+class A11yRuleEngine(private val service: A11yCommonImpl) {
+    private val a11yContext = A11yContext(getRoot = { safeActiveWindow })
+    private val effective get() = A11yRuntime.isEffective(service)
+    private val hasOthersService = A11yRuntime.hasOtherService(service)
 
     fun onA11yConnected() {
-        val serviceTime = System.currentTimeMillis()
-        latestServiceMode.value = service.mode.value
-        latestServiceTime.value = serviceTime
         if (storeFlow.value.enableBlockA11yAppList && !actualBlockA11yAppList.contains(topAppIdFlow.value)) {
             startQueryJob(byForced = true)
-        }
-        runMainPost(1000L) {// 共存 1000ms, 等待另一个服务稳定
-            if (latestServiceTime.value == serviceTime) {
-                when (service.mode) {
-                    AutomatorModeOption.A11yMode -> uiAutomationFlow.value?.shutdown(true)
-                    AutomatorModeOption.AutomationMode -> A11yService.instance?.shutdown(true)
-                }
-            }
         }
     }
 
     fun onScreenForcedActive() {
         // 关闭屏幕 -> Activity::onStop -> 点亮屏幕 -> Activity::onStart -> Activity::onResume
-        val a = topActivityFlow.value
-        synchronized(topActivityFlow) {
-            updateTopActivity(
-                a.appId,
-                a.activityId,
-                scene = ActivityScene.ScreenOn
-            )
-        }
+        A11yState.onScreenForcedActive()
         startQueryJob()
     }
 
@@ -104,7 +66,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
             a11yContext.rootCache.value = this
         }
 
-    val safeActiveWindowAppId: String?
+    private val safeActiveWindowAppId: String?
         get() = safeActiveWindow?.packageName?.toString()
 
     private val scope get() = service.scope
@@ -122,14 +84,17 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
         onA11yFeatEvent(event)
         if (event.eventType == CONTENT_CHANGED) {
             if (!isInteractive) return // 屏幕关闭后仍然有无障碍事件 type:2048, time:8094, app:com.miui.aod, cls:android.widget.TextView
-            if (event.packageName == systemUiAppId && event.packageName != topActivityFlow.value.appId) return
+            if (event.packageName == systemUiAppId && event.packageName != currentTopActivity.appId) return
         }
         // 过滤部分输入法事件
-        if (event.packageName == imeAppId && topActivityFlow.value.appId != imeAppId) {
+        if (event.packageName == imeAppId && currentTopActivity.appId != imeAppId) {
             if (event.recordCount == 0 && event.action == 0 && !event.isFullScreen) return
         }
         // 直接丢弃自身事件，自行更新 topActivity
-        if ((event.eventType == CONTENT_CHANGED || !isActivityVisible) && event.packageName == META.appId) return
+        if (
+            (event.eventType == CONTENT_CHANGED || !MainActivityVisibility.isVisible) &&
+            event.packageName == META.appId
+        ) return
 
         val a11yEvent = event.toA11yEvent() ?: return
         if (a11yEvent.type == CONTENT_CHANGED) {
@@ -170,7 +135,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
         val latestEvent = consumedEvents.last()
         val evAppId = latestEvent.appId
         val evActivityId = latestEvent.name
-        val oldAppId = topActivityFlow.value.appId
+        val oldAppId = currentTopActivity.appId
         val rightAppId = if (oldAppId == evAppId) {
             evAppId
         } else {
@@ -178,7 +143,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
         }
         if (rightAppId == evAppId) {
             if (latestEvent.type == STATE_CHANGED) {
-                synchronized(topActivityFlow) {
+                A11yState.withTopActivityLock {
                     // tv.danmaku.bili, com.miui.home, com.miui.home.launcher.Launcher
                     if (isActivity(evAppId, evActivityId)) {
                         updateTopActivity(evAppId, evActivityId)
@@ -186,8 +151,8 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
                 }
             }
         }
-        if (rightAppId != topActivityFlow.value.appId) {
-            synchronized(topActivityFlow) {
+        if (rightAppId != currentTopActivity.appId) {
+            A11yState.withTopActivityLock {
                 // 从 锁屏，下拉通知栏 返回等情况, 应用不会发送事件, 但是系统组件会发送事件
                 val topCpn = privilegeContextFlow.value?.topCpn()
                 if (topCpn?.packageName == rightAppId) {
@@ -253,7 +218,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
         if (querying) return
         // 无障碍从零启动时获取 safeActiveWindow 非常耗时
         if (byEvent == null && service.justStarted && !hasOthersService) return checkFutureStartJob()
-        scope.launchTry(queryDispatcher) {
+        scope.launchLogged(queryDispatcher) {
             querying = true
             val st = if (META.debuggable) System.currentTimeMillis() else 0L
             try {
@@ -291,8 +256,8 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
     }
 
     private fun fixAppId(rightAppId: String) {
-        if (topActivityFlow.value.appId == rightAppId) return
-        synchronized(topActivityFlow) {
+        if (currentTopActivity.appId == rightAppId) return
+        A11yState.withTopActivityLock {
             val topCpn = privilegeContextFlow.value?.topCpn()
             if (topCpn?.packageName == rightAppId) {
                 updateTopActivity(topCpn.packageName, topCpn.className)
@@ -342,7 +307,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
                 }
             }
         }
-        val activityRule = synchronized(topActivityFlow) { activityRuleFlow.value }
+        val activityRule = A11yState.currentRule
         activityRule.currentRules.forEach { rule ->
             if (rule.status == RuleStatus.Status3 && rule.matchDelayJob.value == null) {
                 rule.matchDelayJob.value = scope.launch(actionDispatcher) {
@@ -399,7 +364,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
             val nodeVal = (lastNode ?: getTimeoutActiveWindow()) ?: continue
             val rightAppId = nodeVal.packageName?.toString() ?: break
             val matchApp = rule.matchActivity(rightAppId)
-            if (topActivityFlow.value.appId != rightAppId || (!matchApp && rule is AppRule)) {
+            if (currentTopActivity.appId != rightAppId || (!matchApp && rule is AppRule)) {
                 scope.launch(eventDispatcher) { fixAppId(rightAppId) }
                 return
             }
@@ -417,7 +382,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
             if (checkOutDate(activityRule, tempStateEvent)) break
             val actionResult = rule.performAction(target)
             if (actionResult.result) {
-                val topActivity = topActivityFlow.value
+                val topActivity = currentTopActivity
                 rule.trigger()
                 scope.launch(actionDispatcher) {
                     delay(300.milliseconds)
@@ -436,57 +401,7 @@ class A11yRuleEngine(val service: A11yCommonImpl) {
         stateEvent: A11yEvent?
     ): Boolean {
         if (stateEvent !== latestStateEvent) return true
-        synchronized(topActivityFlow) {
-            if (activityRule !== activityRuleFlow.value) return true
-        }
-        return false
+        return activityRule !== A11yState.currentRule
     }
 
-    companion object {
-        val service: A11yCommonImpl?
-            get() = uiAutomationFlow.value?.takeIf {
-                it.mode.value == latestServiceMode.value
-            } ?: A11yService.instance
-        val instance: A11yRuleEngine? get() = service?.ruleEngine
-
-        fun compatWindows(): List<AccessibilityWindowInfo> {
-            return try {
-                service?.windowInfos
-            } catch (_: Throwable) {
-                null
-            } ?: emptyList()
-        }
-
-        fun onScreenForcedActive() {
-            instance?.onScreenForcedActive()
-        }
-
-        fun performActionBack(): Boolean {
-            val r1 = privilegeContextFlow.value?.run {
-                inputManager.keyevent(KeyEvent.KEYCODE_BACK)
-            }
-            if (r1 == true) return true
-            return A11yService.instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) == true
-        }
-
-        suspend fun screenshot(): Bitmap? = service?.screenshot()
-
-        suspend fun execAction(gkdAction: GkdAction): ActionResult {
-            val selector = Selector.parseOrNull(gkdAction.selector) ?: throw RpcError("非法选择器")
-            runCatching { selector.checkType(typeInfo) }.exceptionOrNull()?.let {
-                throw RpcError("选择器类型错误:${it.message}")
-            }
-            val s = instance ?: throw RpcError("服务未连接")
-            val a = s.safeActiveWindow ?: throw RpcError("界面没有节点信息")
-            val targetNode = A11yContext(s, interruptable = false).querySelfOrSelector(
-                a, selector, MatchOption(fastQuery = gkdAction.fastQuery)
-            ) ?: throw RpcError("没有查询到节点")
-            return withContext(Dispatchers.IO) {
-                ActionPerformer
-                    .getAction(gkdAction.action ?: ActionPerformer.None.action)
-                    .perform(targetNode, gkdAction)
-            }
-        }
-
-    }
 }

@@ -98,7 +98,7 @@ object NotificationCatalog {
 
     fun screenshot() = ForegroundNotification(
         key = ForegroundNotificationKey.Screenshot,
-        title = "截屏服务正在运行",
+        title = "快照截屏已开启",
         text = "保存快照时截取屏幕",
         uri = "gkd://page/1",
         stopService = ScreenshotService::class,
@@ -106,22 +106,23 @@ object NotificationCatalog {
 
     fun button() = ForegroundNotification(
         key = ForegroundNotificationKey.Button,
-        title = "快照按钮服务正在运行",
+        title = "快照按钮已开启",
         text = "点击按钮捕获快照",
         uri = "gkd://page/1",
         stopService = ButtonService::class,
     )
 
-    fun http() = ForegroundNotification(
+    fun http(port: Int) = ForegroundNotification(
         key = ForegroundNotificationKey.Http,
-        title = "HTTP服务正在运行",
+        title = "HTTP 服务已开启",
+        text = "监听端口：$port",
         uri = "gkd://page/1",
         stopService = HttpService::class,
     )
 
     fun expose() = ForegroundNotification(
         key = ForegroundNotificationKey.Expose,
-        title = "运行外部调用任务中",
+        title = "正在处理外部调用",
         text = "任务完成后自动关闭",
     )
 
@@ -143,7 +144,7 @@ object NotificationCatalog {
 
     fun activity(text: String? = null) = ForegroundNotification(
         key = ForegroundNotificationKey.Activity,
-        title = "记录服务正在运行",
+        title = "界面信息显示中",
         text = text,
         uri = "gkd://page/1",
         stopService = ActivityService::class,
@@ -151,14 +152,14 @@ object NotificationCatalog {
 
     fun event() = ForegroundNotification(
         key = ForegroundNotificationKey.Event,
-        title = "事件服务正在运行",
+        title = "无障碍事件记录中",
         uri = "gkd://page/1",
         stopService = EventService::class,
     )
 
     fun track() = ForegroundNotification(
         key = ForegroundNotificationKey.Track,
-        title = "轨迹服务正在运行",
+        title = "轨迹提示已开启",
         uri = "gkd://page?tab=3",
         stopService = TrackService::class,
     )

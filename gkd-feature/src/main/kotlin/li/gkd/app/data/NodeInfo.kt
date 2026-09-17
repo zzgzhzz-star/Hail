@@ -3,9 +3,9 @@ package li.gkd.app.data
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.serialization.Serializable
 import li.gkd.app.a11y.MAX_CHILD_SIZE
-import li.gkd.app.a11y.topActivityFlow
+import li.gkd.app.a11y.currentTopActivity
 import li.gkd.app.util.LogUtils
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 import kotlin.system.measureTimeMillis
 
 @Serializable
@@ -80,7 +80,7 @@ fun info2nodeList(root: AccessibilityNodeInfo?): List<NodeInfo> {
                 LogUtils.d(
                     "节点数量过多",
                     root.packageName,
-                    topActivityFlow.value.activityId,
+                    currentTopActivity.activityId,
                 )
                 break
             }
@@ -204,7 +204,7 @@ fun info2nodeList(root: AccessibilityNodeInfo?): List<NodeInfo> {
     }
 
     LogUtils.d(
-        topActivityFlow.value,
+        currentTopActivity,
         "快照节点数量:${nodes.size}, 总耗时:${collectTime + qfTime}ms",
         "收集节点耗时:${collectTime}ms, 收集 fastQuery 耗时:${qfTime}ms",
     )
@@ -219,4 +219,3 @@ fun info2nodeList(root: AccessibilityNodeInfo?): List<NodeInfo> {
         )
     }
 }
-

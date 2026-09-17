@@ -9,6 +9,7 @@ import androidx.room3.OnConflictStrategy
 import androidx.room3.PrimaryKey
 import androidx.room3.Query
 import androidx.room3.Transaction
+import androidx.room3.Upsert
 import androidx.room3.Update
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
@@ -54,8 +55,8 @@ data class SubsItem(
             }
         }
 
-        @Insert(onConflict = OnConflictStrategy.REPLACE)
-        suspend fun insert(vararg users: SubsItem): List<Long>
+        @Upsert
+        suspend fun upsert(vararg users: SubsItem): List<Long>
 
         @Insert(onConflict = OnConflictStrategy.IGNORE)
         suspend fun insertOrIgnore(vararg users: SubsItem): List<Long>

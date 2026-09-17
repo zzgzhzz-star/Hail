@@ -6,7 +6,7 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
-import li.gkd.app.a11y.A11yRuleEngine
+import li.gkd.app.a11y.A11yRuntime
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.priv.toHidden
 import li.gkd.app.service.A11yService
@@ -70,9 +70,7 @@ sealed class ActionPerformer(val action: String) {
             return ActionResult(
                 action = action,
                 result = if (
-                    privilegeContextFlow.value?.run {
-                        inputManager.tap(x, y)
-                    } == true
+                    privilegeContextFlow.value?.tap(x, y) == true
                 ) {
                     true
                 } else {
@@ -147,9 +145,7 @@ sealed class ActionPerformer(val action: String) {
             return ActionResult(
                 action = action,
                 result = if (
-                    privilegeContextFlow.value?.run {
-                        inputManager.tap(x, y, LONG_DURATION)
-                    } == true
+                    privilegeContextFlow.value?.tap(x, y, LONG_DURATION) == true
                 ) {
                     true
                 } else {
@@ -196,7 +192,7 @@ sealed class ActionPerformer(val action: String) {
         ): ActionResult {
             return ActionResult(
                 action = action,
-                result = A11yRuleEngine.performActionBack()
+                result = A11yRuntime.performActionBack()
             )
         }
     }
@@ -244,15 +240,13 @@ sealed class ActionPerformer(val action: String) {
             }
             TrackService.addSwipePosition(startX, startY, endX, endY, swipeArg.duration)
             return if (
-                privilegeContextFlow.value?.run {
-                    inputManager.swipe(
-                        startX,
-                        startY,
-                        endX,
-                        endY,
-                        swipeArg.duration
-                    )
-                } == true
+                privilegeContextFlow.value?.swipe(
+                    startX,
+                    startY,
+                    endX,
+                    endY,
+                    swipeArg.duration,
+                ) == true
             ) {
                 ActionResult(
                     action = action,

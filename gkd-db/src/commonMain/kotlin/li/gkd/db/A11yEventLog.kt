@@ -18,7 +18,7 @@ class A11yEventLog(
     @PrimaryKey @ColumnInfo(name = "id") val id: Int,
     @ColumnInfo(name = "ctime") val ctime: Long,
     @ColumnInfo(name = "type") val type: Int,
-    @ColumnInfo(name = "appId") val appId: String,
+    @ColumnInfo(name = "app_id") val appId: String,
     @ColumnInfo(name = "name") val name: String,
     @ColumnInfo(name = "desc") val desc: String?,
     @ColumnInfo(name = "text") val text: List<String>,

@@ -22,5 +22,4 @@ class CompatPackageManager {
             app.baseContext,
             iPackageManager,
         )
-
 }

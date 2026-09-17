@@ -1,13 +1,11 @@
 package li.gkd.app.service
 
-import li.gkd.app.store.storeFlow
-import li.gkd.app.store.switchStoreEnableMatch
-import li.gkd.app.util.mapState
+import li.gkd.app.store.AppStore.storeFlow
+import li.gkd.app.store.AppStore.toggleEnableMatch
+import kotlinx.coroutines.flow.map
 
 class MatchTileService : BaseTileService() {
-    override val activeFlow = storeFlow.mapState(scope) { it.enableMatch }
+    override val activeFlow = storeFlow.map { it.enableMatch }
 
-    init {
-        onTileClicked { switchStoreEnableMatch() }
-    }
+    override fun onTileClick() = toggleEnableMatch()
 }

@@ -1,75 +1,27 @@
 package li.gkd.app.ui.home
 
 import android.net.Uri
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.withContext
 import li.gkd.app.service.TrackService
 import li.gkd.app.service.fixRestartAutomatorService
-import li.gkd.app.store.actionCountFlow
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.storeFlow
+import li.gkd.app.store.AppStore
 import li.gkd.app.ui.share.BaseViewModel
-import li.gkd.app.util.BackupUtils
-import li.gkd.app.util.getSubsStatus
-import li.gkd.app.util.ruleSummaryFlow
+import li.gkd.app.data.backup.BackupManager
+import li.gkd.app.util.ToastUtils.toast
 import java.io.File
 
 class SettingsVm : BaseViewModel() {
 
-    val showActionToastDialogFlow: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-    val showNotificationTextDialogFlow: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-    val showA11yBlockDialogFlow: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-    val showBackupDialogFlow: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-    val showExportBackupDialogFlow: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-    val toastSettingsDialogVisibleFlow: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-
-    fun setActionToastDialogVisible(visible: Boolean) {
-        showActionToastDialogFlow.value = visible
-    }
-
-    fun setNotificationTextDialogVisible(visible: Boolean) {
-        showNotificationTextDialogFlow.value = visible
-    }
-
-    fun setA11yBlockDialogVisible(visible: Boolean) {
-        showA11yBlockDialogFlow.value = visible
-    }
-
-    fun setBackupDialogVisible(visible: Boolean) {
-        showBackupDialogFlow.value = visible
-    }
-
-    fun setExportBackupDialogVisible(visible: Boolean) {
-        showExportBackupDialogFlow.value = visible
-    }
-
-    fun setToastSettingsDialogVisible(visible: Boolean) {
-        toastSettingsDialogVisibleFlow.value = visible
-    }
-
-    val subsStatusFlow = combine(ruleSummaryFlow, actionCountFlow) { ruleSummary, count ->
-        getSubsStatus(ruleSummary, count)
-    }.stateInit(getSubsStatus(ruleSummaryFlow.value, actionCountFlow.value))
-
     fun saveActionToast(value: String): Boolean {
         if (value == storeFlow.value.actionToast) return false
-        storeFlow.update { it.copy(actionToast = value) }
+        AppStore.updateSettings { it.copy(actionToast = value) }
         return true
     }
 
     fun saveNotificationText(title: String, text: String): Boolean {
         val store = storeFlow.value
         if (store.customNotifTitle == title && store.customNotifText == text) return false
-        storeFlow.update {
+        AppStore.updateSettings {
             it.copy(
                 customNotifTitle = title,
                 customNotifText = text,
@@ -79,11 +31,11 @@ class SettingsVm : BaseViewModel() {
     }
 
     fun setToastWhenClick(enabled: Boolean) {
-        storeFlow.update { it.copy(toastWhenClick = enabled) }
+        AppStore.updateSettings { it.copy(toastWhenClick = enabled) }
     }
 
     fun setUseSystemToast(enabled: Boolean) {
-        storeFlow.update { it.copy(useSystemToast = enabled) }
+        AppStore.updateSettings { it.copy(useSystemToast = enabled) }
     }
 
     fun setTrackServiceEnabled(enabled: Boolean) {
@@ -91,35 +43,33 @@ class SettingsVm : BaseViewModel() {
     }
 
     fun setUseCustomNotificationText(enabled: Boolean) {
-        storeFlow.update { it.copy(useCustomNotifText = enabled) }
+        AppStore.updateSettings { it.copy(useCustomNotifText = enabled) }
     }
 
     fun setExcludeFromRecents(enabled: Boolean) {
-        storeFlow.update { it.copy(excludeFromRecents = enabled) }
+        AppStore.updateSettings { it.copy(excludeFromRecents = enabled) }
     }
 
     fun setBlockA11yAppListEnabled(enabled: Boolean) {
-        storeFlow.update { it.copy(enableBlockA11yAppList = enabled) }
+        AppStore.updateSettings { it.copy(enableBlockA11yAppList = enabled) }
         if (!enabled) {
             fixRestartAutomatorService()
         }
     }
 
     fun setDarkTheme(value: Boolean?) {
-        storeFlow.update { it.copy(enableDarkTheme = value) }
+        AppStore.updateSettings { it.copy(enableDarkTheme = value) }
     }
 
     fun setDynamicColor(enabled: Boolean) {
-        storeFlow.update { it.copy(enableDynamicColor = enabled) }
+        AppStore.updateSettings { it.copy(enableDynamicColor = enabled) }
     }
 
     suspend fun importBackup(uri: Uri) {
-        withContext(Dispatchers.IO) {
-            BackupUtils.importBackUpData(uri)
-        }
+        toast("导入备份中...")
+        val skipped = BackupManager.importData(uri)
+        toast(if (skipped > 0) "导入成功，已跳过 $skipped 条所属订阅已不存在的配置" else "导入成功")
     }
 
-    suspend fun exportBackup(): File = withContext(Dispatchers.IO) {
-        BackupUtils.exportBackUpData()
-    }
+    suspend fun exportBackup(): File = BackupManager.exportData()
 }

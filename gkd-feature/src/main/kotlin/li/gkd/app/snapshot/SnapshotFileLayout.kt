@@ -3,7 +3,7 @@ package li.gkd.app.snapshot
 import java.io.File
 
 class SnapshotFileLayout(
-    private val root: File,
+    val rootDirectory: File,
 ) {
     class Files(
         private val id: Long,
@@ -32,11 +32,11 @@ class SnapshotFileLayout(
     }
 
     fun committed(id: Long): Files {
-        return Files(id, root.resolve(id.toString()))
+        return Files(id, rootDirectory.resolve(id.toString()))
     }
 
     fun staging(id: Long): Files {
-        return Files(id, root.resolve(".$id.tmp"))
+        return Files(id, rootDirectory.resolve(".$id.tmp"))
     }
 }
 

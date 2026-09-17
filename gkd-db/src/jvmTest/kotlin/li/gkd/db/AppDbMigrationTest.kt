@@ -35,6 +35,7 @@ class AppDbMigrationTest {
 
     private fun openDatabase(databaseName: String): AppDb =
         Room.databaseBuilder<AppDb>(name = databasePath(databaseName).toString())
+            .addMigrations(Migration14To15)
             .setDriver(BundledSQLiteDriver())
             .setQueryCoroutineContext(Dispatchers.IO)
             .build()
@@ -57,12 +58,110 @@ class AppDbMigrationTest {
     }
 
     @Test
-    fun everyExportedSchemaMigratesToVersion14() = runBlocking {
+    fun everyExportedSchemaMigratesToVersion16() = runBlocking {
         // Protects the persisted schema compatibility contract for every released version.
-        for (startVersion in 1 until 14) {
+        for (startVersion in 1 until 16) {
             val helper = migrationHelper("all-migrations-$startVersion.db")
             helper.createDatabase(startVersion).close()
-            helper.runMigrationsAndValidate(14, emptyList()).close()
+            helper.runMigrationsAndValidate(16, listOf(Migration14To15)).close()
+        }
+    }
+
+    @Test
+    fun migration15To16PreservesConfigurationsLogsAndLastVisitOrdering() = runBlocking {
+        val name = "rename-tables.db"
+        val helper = migrationHelper(name)
+        helper.createDatabase(15).use { connection ->
+            connection.execSQL("INSERT INTO subs_item VALUES (7, 1, 2, 1, 1, 0, NULL)")
+            connection.execSQL("INSERT INTO app_config VALUES (0, 7, 'app.one')")
+            connection.execSQL("INSERT INTO category_config VALUES (NULL, 7, 3)")
+            connection.execSQL("INSERT INTO app_group_config VALUES (7, 'app.one', 4, NULL, 'app-exclude')")
+            connection.execSQL("INSERT INTO global_group_config VALUES (7, 4, 1, 'global-exclude')")
+            connection.execSQL("INSERT INTO activity_log_v2 VALUES (41, 100, 'app.one', 'MainActivity')")
+            connection.execSQL("INSERT INTO app_visit_log VALUES ('app.one', 100), ('app.two', 200)")
+            connection.execSQL("""INSERT INTO a11y_event_log VALUES (5, 300, 32, 'app.one', 'Event', 'description', '["first","second"]')""")
+        }
+        helper.runMigrationsAndValidate(16, listOf(Migration14To15)).use { connection ->
+            assertEquals(100L, connection.queryLong("SELECT last_visit_time FROM app_last_visit WHERE app_id = 'app.one'"))
+            assertEquals("app.one", connection.queryText("SELECT app_id FROM a11y_event_log WHERE id = 5"))
+            assertEquals("description", connection.queryText("SELECT desc FROM a11y_event_log WHERE id = 5"))
+            assertEquals("""["first","second"]""", connection.queryText("SELECT text FROM a11y_event_log WHERE id = 5"))
+            assertEquals("MainActivity", connection.queryText("SELECT activity_id FROM activity_log WHERE id = 41"))
+            connection.prepare("PRAGMA foreign_key_check").use { assertTrue(!it.step()) }
+        }
+        val database = openDatabase(name)
+        try {
+            val store = SubscriptionConfigStore(database)
+            val before = store.capture()
+            assertEquals(listOf(SubsItem(7, ctime = 1, mtime = 2, enable = true, order = 0)), before.subsItems)
+            assertEquals(listOf(SubsAppConfig(false, 7, "app.one")), before.appConfigs)
+            assertEquals(listOf(SubsCategoryConfig(null, 7, 3)), before.categoryConfigs)
+            assertEquals(listOf(SubsAppGroupConfig(7, "app.one", 4, null, "app-exclude")), before.appGroupConfigs)
+            assertEquals(listOf(SubsGlobalGroupConfig(7, 4, true, "global-exclude")), before.globalGroupConfigs)
+
+            assertEquals(listOf("app.two", "app.one"), database.appLastVisitDao().query().first())
+            database.appLastVisitDao().insert(AppLastVisit("app.one", 400))
+            assertEquals(listOf("app.one", "app.two"), database.appLastVisitDao().query().first())
+            assertEquals(listOf(42L), database.activityLogDao().insert(ActivityLog(ctime = 400, appId = "app.two")))
+            assertEquals(2, database.activityLogDao().count().first())
+            assertEquals(1, database.a11yEventLogDao().count().first())
+
+            // Renaming child tables must preserve both parent-update and cascading-delete behavior.
+            val updatedItem = before.subsItems.single().copy(enable = false)
+            database.subsItemDao().upsert(updatedItem)
+            assertEquals(before.copy(subsItems = listOf(updatedItem)), store.capture())
+            database.subsItemDao().deleteById(7)
+            assertEquals(SubscriptionConfigSnapshot(), store.capture())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun migration14To15DeduplicatesWholeConfigurationsAndPreservesTheirMeaning() = runBlocking {
+        val name = "configuration-migration.db"
+        val helper = migrationHelper(name)
+        helper.createDatabase(14).apply {
+            execSQL("INSERT INTO subs_item VALUES (7, 1, 1, 1, 1, 0, NULL)")
+            execSQL("INSERT INTO subs_item VALUES (8, 1, 1, 1, 1, 1, NULL)")
+            // IDs deliberately disagree with insertion order and configuration values.
+            execSQL("INSERT INTO subs_config VALUES (20, 2, 1, 7, 'app.one', 4, 'new')")
+            execSQL("INSERT INTO subs_config VALUES (10, 2, 0, 7, 'app.one', 4, 'old')")
+            execSQL("INSERT INTO subs_config VALUES (21, 2, 1, 7, 'app.two', 4, '')")
+            execSQL("INSERT INTO subs_config VALUES (22, 2, 1, 8, 'app.one', 4, '')")
+            execSQL("INSERT INTO subs_config VALUES (40, 3, 1, 7, '', 4, 'new-global')")
+            execSQL("INSERT INTO subs_config VALUES (30, 3, NULL, 7, '', 4, 'old-global')")
+            execSQL("INSERT INTO app_config VALUES (60, 1, 7, 'app.one')")
+            execSQL("INSERT INTO app_config VALUES (50, 0, 7, 'app.one')")
+            execSQL("INSERT INTO category_config VALUES (80, 0, 7, 3)")
+            execSQL("INSERT INTO category_config VALUES (70, NULL, 7, 3)")
+            // Old subscription deletion could leave orphaned app overrides behind.
+            execSQL("INSERT INTO app_config VALUES (90, 0, 99, 'orphan')")
+            execSQL("INSERT INTO category_config VALUES (91, 0, 99, 3)")
+            execSQL("INSERT INTO subs_config VALUES (92, 2, 0, 99, 'orphan', 4, '')")
+            execSQL("INSERT INTO subs_config VALUES (93, 3, 0, 99, '', 4, '')")
+            close()
+        }
+        helper.runMigrationsAndValidate(15, listOf(Migration14To15)).close()
+        val database = openDatabase(name)
+        try {
+            val appDao = database.subsAppGroupConfigDao()
+            assertEquals(3, appDao.queryAll().size)
+            assertEquals(SubsAppGroupConfig(7, "app.one", 4, false, "old"), appDao.queryConfig(7, "app.one", 4).first())
+            assertEquals(listOf(SubsGlobalGroupConfig(7, 4, null, "old-global")), database.subsGlobalGroupConfigDao().queryAll())
+            assertEquals(listOf(SubsAppConfig(false, 7, "app.one")), database.subsAppConfigDao().queryAll())
+            assertEquals(listOf(SubsCategoryConfig(null, 7, 3)), database.subsCategoryConfigDao().queryAll())
+
+            // A switch update must affect the same sole row used by first-match UI and indexed runtime reads.
+            appDao.upsert(SubsAppGroupConfig(7, "app.one", 4, true, "old"))
+            val configs = appDao.queryByAppId(7, "app.one").first()
+            assertEquals(1, configs.size)
+            assertEquals(true, configs.find { it.groupKey == 4 }?.enable)
+            assertEquals(true, appDao.queryUsedList().first().associateBy {
+                Triple(it.subsId, it.appId, it.groupKey)
+            }[Triple(7L, "app.one", 4)]?.enable)
+        } finally {
+            database.close()
         }
     }
 
@@ -155,7 +254,7 @@ class AppDbMigrationTest {
             var failed = false
             try {
                 database.withWriteTransaction {
-                    database.subsItemDao().insert(SubsItem(id = 43, order = 1))
+                    database.subsItemDao().upsert(SubsItem(id = 43, order = 1))
                     error("rollback")
                 }
             } catch (_: IllegalStateException) {

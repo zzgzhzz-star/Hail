@@ -1,10 +1,8 @@
 package li.gkd.app.util
 
-import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageInfo
-import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
@@ -21,8 +19,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import kotlinx.serialization.json.JsonElement
 import li.gkd.app.META
-import li.gkd.app.MainActivity
 import li.gkd.app.app
+import li.gkd.app.data.appinfo.AppInfoRepository
 import li.songe.json5.Json5
 import li.songe.json5.Json5EncoderConfig
 import li.songe.json5.encodeToJson5String
@@ -35,8 +33,6 @@ private val componentNameCache by lazy { HashMap<String, ComponentName>() }
 val KClass<*>.componentName
     get() = componentNameCache.getOrPut(jvmName) { ComponentName(META.appId, jvmName) }
 
-class InterruptRuleMatchException : Exception()
-
 fun getShowActivityId(appId: String, activityId: String?): String? {
     return if (activityId != null) {
         if (activityId.startsWith(appId) && activityId.getOrNull(appId.length) == '.') {
@@ -48,21 +44,6 @@ fun getShowActivityId(appId: String, activityId: String?): String? {
         null
     }
 }
-
-fun MainActivity.fixSomeProblems() {
-    fixTransparentNavigationBar()
-}
-
-private fun Activity.fixTransparentNavigationBar() {
-    // 修复在浅色主题下导航栏背景不透明的问题
-    if (AndroidTarget.Q) {
-        window.isNavigationBarContrastEnforced = false
-    } else {
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = Color.TRANSPARENT
-    }
-}
-
 
 fun <S : Comparable<S>> AnimatedContentTransitionScope<S>.getUpDownTransform(): ContentTransform {
     return if (targetState > initialState) {
@@ -153,9 +134,9 @@ object AppListString {
     fun encode(set: Set<String>, append: Boolean = false): String {
         val list = set.sorted()
         if (append) {
-            return list.sortedBy { id -> if (id in appInfoMapFlow.value) 0 else 1 }
+            return list.sortedBy { id -> if (id in AppInfoRepository.appInfoMapFlow.value) 0 else 1 }
                 .joinToString(separator = "\n\n", postfix = "\n\n") {
-                    val name = appInfoMapFlow.value[it]?.name
+                    val name = AppInfoRepository.appInfoMapFlow.value[it]?.name
                     if (name != null) {
                         "$it\n# $name"
                     } else {
@@ -197,7 +178,7 @@ fun runMainPost(delayMillis: Long = 0L, r: Runnable) {
 }
 
 fun getShareApkFile(): File {
-    return sharedDir.resolve("gkd-v${META.versionName}.apk").apply {
+    return FolderUtils.sharedDir.resolve("gkd-v${META.versionName}.apk").apply {
         File(app.packageCodePath).copyTo(this, overwrite = true)
     }
 }

@@ -7,17 +7,36 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import li.gkd.app.META
-import li.gkd.app.util.OnSimpleLife
 import kotlin.reflect.KClass
 import kotlin.reflect.jvm.jvmName
 
-class StopServiceReceiver(private val service: Service) : BroadcastReceiver() {
+class StopServiceReceiver(private val service: Service) : BroadcastReceiver(), AutoCloseable {
+    private var registered = false
+
     override fun onReceive(context: Context?, intent: Intent?) {
         context ?: return
         intent ?: return
         if (intent.action == STOP_ACTION && intent.getStringExtra(STOP_ACTION) == service::class.jvmName) {
             service.stopSelf()
         }
+    }
+
+    fun register(): StopServiceReceiver {
+        if (registered) return this
+        ContextCompat.registerReceiver(
+            service,
+            this,
+            IntentFilter(STOP_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        registered = true
+        return this
+    }
+
+    override fun close() {
+        if (!registered) return
+        service.unregisterReceiver(this)
+        registered = false
     }
 
     companion object {
@@ -27,22 +46,6 @@ class StopServiceReceiver(private val service: Service) : BroadcastReceiver() {
             action = STOP_ACTION
             putExtra(STOP_ACTION, clazz.jvmName)
             setPackage(META.appId)
-        }
-
-        context(service: T)
-        fun <T> autoRegister() where T : Service, T : OnSimpleLife {
-            val receiver = StopServiceReceiver(service)
-            service.onCreated {
-                ContextCompat.registerReceiver(
-                    service,
-                    receiver,
-                    IntentFilter(STOP_ACTION),
-                    ContextCompat.RECEIVER_NOT_EXPORTED
-                )
-            }
-            service.onDestroyed {
-                service.unregisterReceiver(receiver)
-            }
         }
     }
 }

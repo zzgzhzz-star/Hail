@@ -13,16 +13,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable
 import li.gkd.app.MainActivity
-import li.gkd.app.store.blockMatchAppListFlow
 import li.gkd.app.ui.component.MultiTextField
 import li.gkd.app.ui.component.PerfIcon
 import li.gkd.app.ui.component.PerfIconButton
 import li.gkd.app.ui.component.PerfTopAppBar
 import li.gkd.app.ui.share.LocalMainViewModel
 import li.gkd.app.ui.style.scaffoldPadding
-import li.gkd.app.util.launchAsFn
+import li.gkd.app.ui.share.launchUiAction
 import li.gkd.app.util.throttle
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 
 @Serializable
 data object EditBlockAppListRoute : NavKey
@@ -33,13 +32,13 @@ fun EditBlockAppListPage() {
     val context = LocalActivity.current as MainActivity
     val vm = viewModel<EditBlockAppListVm>()
     val text by vm.textFlow.collectAsStateWithLifecycle()
-    val onBack = throttle(vm.scope.launchAsFn {
+    val onBack = throttle(vm.scope.launchUiAction {
         if (vm.getChangedSet() != null) {
             context.imeController.requestHide()
             if (!mainVm.dialogRequests.confirm(
                 title = "提示",
                 text = "当前内容未保存，是否放弃编辑？",
-            )) return@launchAsFn
+            )) return@launchUiAction
         } else {
             context.imeController.hideAndAwait()
         }
@@ -59,10 +58,8 @@ fun EditBlockAppListPage() {
             actions = {
                 PerfIconButton(
                     imageVector = PerfIcon.Save,
-                    onClick = throttle(vm.scope.launchAsFn {
-                        val newSet = vm.getChangedSet()
-                        if (newSet != null) {
-                            blockMatchAppListFlow.value = newSet
+                    onClick = throttle(vm.scope.launchUiAction {
+                        if (vm.saveChanges()) {
                             toast("更新成功")
                         } else {
                             toast("未修改")

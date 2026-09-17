@@ -1,6 +1,5 @@
 package li.gkd.app.ui.home
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -10,18 +9,21 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import li.gkd.app.data.RawSubscription
 import li.gkd.db.SubsItem
-import li.gkd.db.Db
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.storeFlow
+import li.gkd.app.store.AppStore
+import li.gkd.app.util.MutexState
 import li.gkd.app.ui.share.BaseViewModel
-import li.gkd.app.ui.share.Loadable
-import li.gkd.app.util.SubscriptionResult
-import li.gkd.app.util.SubscriptionSnapshot
-import li.gkd.app.util.SubscriptionStore
-import li.gkd.app.util.launchTry
-import li.gkd.app.util.toast
+import li.gkd.app.core.state.Loadable
+import li.gkd.app.data.subscription.SubscriptionResult
+import li.gkd.app.data.subscription.SubscriptionSnapshot
+import li.gkd.app.data.subscription.SubscriptionRepository
+import li.gkd.app.ui.share.launchUi
+import li.gkd.app.ui.share.message
+import li.gkd.app.util.ToastUtils.toast
+import li.gkd.db.Db
+import li.gkd.db.LOCAL_SUBS_ID
 
 data class SubsManageUiState(
     val subItems: List<SubsItem>,
@@ -44,19 +46,26 @@ private fun buildSubsManageUiState(
 )
 
 class SubsManageVm : BaseViewModel() {
+    private val batchMutex = MutexState()
+    val batchBusyFlow: StateFlow<Boolean> get() = batchMutex.state
+
+    suspend fun runBatchAction(action: suspend () -> Unit) {
+        batchMutex.tryWithStateLock(action)
+    }
+
     val settingsDialogVisibleFlow: StateFlow<Boolean>
         field = MutableStateFlow(false)
     val powerWarningItemFlow: StateFlow<SubsItem?>
         field = MutableStateFlow(null)
 
     val uiState: StateFlow<Loadable<SubsManageUiState>> =
-        SubscriptionStore.snapshotFlow.flatMapLatest { snapshotState ->
+        SubscriptionRepository.snapshotFlow.flatMapLatest { snapshotState ->
             when (snapshotState) {
                 Loadable.Loading -> flowOf(Loadable.Loading)
                 is Loadable.Failure -> flowOf(snapshotState)
                 is Loadable.Ready -> combine(
                     Db.subsItemDao.query(),
-                    SubscriptionStore.updating,
+                    SubscriptionRepository.updating,
                 ) { subItems, refreshing ->
                     buildSubsManageUiState(
                         subItems = subItems,
@@ -69,11 +78,11 @@ class SubsManageVm : BaseViewModel() {
         }.stateIn(scope, SharingStarted.Eagerly, Loadable.Loading)
 
     fun setUpdateInterval(value: Long) {
-        storeFlow.update { it.copy(updateSubsInterval = value) }
+        AppStore.updateSettings { it.copy(updateSubsInterval = value) }
     }
 
     fun setPowerWarningEnabled(enabled: Boolean) {
-        storeFlow.update { it.copy(subsPowerWarn = enabled) }
+        AppStore.updateSettings { it.copy(subsPowerWarn = enabled) }
     }
 
     fun setSettingsDialogVisible(visible: Boolean) {
@@ -81,20 +90,20 @@ class SubsManageVm : BaseViewModel() {
     }
 
     fun toggleMatching() {
-        storeFlow.update { it.copy(enableMatch = !it.enableMatch) }
+        AppStore.updateSettings { it.copy(enableMatch = !it.enableMatch) }
     }
 
     fun refresh() {
-        scope.launchTry(Dispatchers.IO) {
-            SubscriptionStore.refresh().message?.let { toast(it) }
+        scope.launchUi {
+            SubscriptionRepository.refresh().message?.let { toast(it) }
         }
     }
 
     suspend fun deleteSubscriptions(ids: Set<Long>): SubscriptionResult =
-        SubscriptionStore.delete(*ids.toLongArray())
+        SubscriptionRepository.delete(*(ids - LOCAL_SUBS_ID).toLongArray())
 
     fun updateOrder(items: List<SubsItem>) {
-        scope.launchTry(Dispatchers.IO) {
+        scope.launchUi {
             Db.subsItemDao.batchUpdateOrder(items)
         }
     }
@@ -130,7 +139,7 @@ class SubsManageVm : BaseViewModel() {
     }
 
     private fun setSubscriptionEnabled(item: SubsItem, enabled: Boolean) {
-        scope.launchTry(Dispatchers.IO) {
+        scope.launchUi {
             Db.subsItemDao.updateEnable(item.id, enabled)
         }
     }
@@ -138,5 +147,5 @@ class SubsManageVm : BaseViewModel() {
     suspend fun addOrModifySubscription(
         url: String,
         oldItem: SubsItem? = null,
-    ): SubscriptionResult = SubscriptionStore.addOrModifyRemote(url, oldItem)
+    ): SubscriptionResult = SubscriptionRepository.addOrModifyRemote(url, oldItem)
 }

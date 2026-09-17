@@ -10,41 +10,56 @@ import androidx.compose.runtime.setValue
 
 @Stable
 class MultiSelectionState<K> {
-    var selectedKeys by mutableStateOf<Set<K>>(emptySet())
-        private set
+    private data class Selection<K>(
+        val active: Boolean = false,
+        val keys: Set<K> = emptySet(),
+    )
+
+    private var selection by mutableStateOf(Selection<K>())
+
+    val selectedKeys: Set<K>
+        get() = selection.keys
 
     val active: Boolean
-        get() = selectedKeys.isNotEmpty()
+        get() = selection.active
 
-    fun selectOnly(key: K) {
-        selectedKeys = setOf(key)
+    fun select(key: K) {
+        selection = Selection(active = true, keys = selectedKeys + key)
     }
 
     fun toggle(key: K) {
-        selectedKeys = if (key in selectedKeys) {
+        val keys = if (key in selectedKeys) {
             selectedKeys - key
         } else {
             selectedKeys + key
         }
+        selection = Selection(active = true, keys = keys)
     }
 
     fun selectAll(keys: Iterable<K>) {
-        selectedKeys = keys.toSet()
+        selection = Selection(active = true, keys = keys.toSet())
     }
 
     fun invert(keys: Iterable<K>) {
-        selectedKeys = keys.toSet() - selectedKeys
+        selection = Selection(active = true, keys = keys.toSet() - selectedKeys)
     }
 
+    // Only reconcile a loaded list. An empty selection alone does not end selection mode.
     fun retain(keys: Set<K>) {
-        val retainedKeys = selectedKeys intersect keys
-        if (retainedKeys != selectedKeys) {
-            selectedKeys = retainedKeys
+        if (keys.isEmpty()) {
+            clear()
+        } else {
+            selection = selection.copy(keys = selectedKeys intersect keys)
         }
     }
 
+    fun removeDeleted(keys: Set<K>) {
+        val remaining = selectedKeys - keys
+        selection = Selection(active = active && remaining.isNotEmpty(), keys = remaining)
+    }
+
     fun clear() {
-        selectedKeys = emptySet()
+        selection = Selection()
     }
 }
 
@@ -69,7 +84,8 @@ class ReorderSession<T, K>(
     var items by mutableStateOf(initialItems)
         private set
 
-    private var dragging = false
+    var dragging by mutableStateOf(false)
+        private set
     private var moved = false
 
     fun sync(items: List<T>) {

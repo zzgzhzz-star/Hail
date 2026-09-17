@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryController
@@ -26,50 +25,36 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import li.gkd.app.app
 import li.gkd.app.notif.NotificationCatalog
-import li.gkd.app.notif.StopServiceReceiver
 import li.gkd.app.priv.toHidden
 import li.gkd.app.util.AndroidTarget
-import li.gkd.app.util.DefaultSimpleLifeImpl
-import li.gkd.app.util.OnSimpleLife
 import li.gkd.app.util.ScreenUtils
-import li.gkd.app.util.startForegroundServiceByClass
-import li.gkd.app.util.stopServiceByClass
+import li.gkd.app.util.IntentUtils
 import kotlin.math.min
 import kotlin.math.pow
 
-class TrackService : LifecycleService(), SavedStateRegistryOwner,
-    OnSimpleLife by DefaultSimpleLifeImpl() {
-    override fun onCreate() {
-        super.onCreate()
-        onCreated()
-    }
+class TrackService : LifecycleHookService(), SavedStateRegistryOwner {
 
-    override fun onDestroy() {
-        super.onDestroy()
-        onDestroyed()
-    }
-
-    val registryController = SavedStateRegistryController.create(this).apply {
+    private val registryController = SavedStateRegistryController.create(this).apply {
         performAttach()
         performRestore(null)
     }
     override val savedStateRegistry = registryController.savedStateRegistry
-    override val scope get() = lifecycleScope
-
     private val resizeFlow = MutableSharedFlow<Unit>()
     override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
         lifecycleScope.launch { resizeFlow.emit(Unit) }
     }
 
-    val strokeWidth = 2f
-    val pointSize = ScreenUtils.getScreenSize().let { min(it.width, it.height) } * 0.1f
-    val pointRadius = pointSize / 2
+    private val strokeWidth = 2f
+    private val pointSize = ScreenUtils.getScreenSize().let { min(it.width, it.height) } * 0.1f
+    private val pointRadius = pointSize / 2
 
     private fun DrawScope.drawTrackPoint(center: Offset) {
         drawLine(
@@ -250,13 +235,7 @@ class TrackService : LifecycleService(), SavedStateRegistryOwner,
         }
     }
 
-    private val layerMap = hashMapOf<Int, FloatLayer>().apply {
-        onDestroyed {
-            forEach { it.value.removeView() }
-            clear()
-        }
-    }
-
+    private val layerMap = hashMapOf<Int, FloatLayer>()
     private fun recalcOverlappingAlpha() {
         if (!AndroidTarget.S) return
         val maxOpacity = app.inputManager.maximumObscuringOpacityForTouch
@@ -279,26 +258,30 @@ class TrackService : LifecycleService(), SavedStateRegistryOwner,
         }
     }
 
-    val tapDelay = 100L
-    val missDelay = 7500L
+    private val tapDelay = 100L
+    private val missDelay = 7500L
 
     private fun addPoint(point: TrackPoint) {
-        runScopePost(tapDelay) {
+        lifecycleScope.launch {
+            delay(tapDelay)
             layerMap[point.id] = PointFloatLayer(point)
             recalcOverlappingAlpha()
         }
-        runScopePost(missDelay) {
+        lifecycleScope.launch {
+            delay(missDelay)
             layerMap.remove(point.id)?.removeView()
             recalcOverlappingAlpha()
         }
     }
 
     private fun addSwipePoint(swipePoint: SwipeTrackPoint) {
-        runScopePost(tapDelay) {
+        lifecycleScope.launch {
+            delay(tapDelay)
             layerMap[swipePoint.id] = SwipePointFloatLayer(swipePoint)
             recalcOverlappingAlpha()
         }
-        runScopePost(missDelay + swipePoint.duration) {
+        lifecycleScope.launch {
+            delay(missDelay + swipePoint.duration)
             layerMap.remove(swipePoint.id)?.removeView()
             recalcOverlappingAlpha()
         }
@@ -306,13 +289,19 @@ class TrackService : LifecycleService(), SavedStateRegistryOwner,
 
     init {
         useLogLifecycle()
-        onCreated { service = this }
-        onDestroyed { service = null }
-        useAliveFlow(isRunning)
-        useAliveToast("轨迹提示")
-        StopServiceReceiver.autoRegister()
+        useServicePresence(
+            stateFlow = isRunning,
+            name = "轨迹提示",
+        )
+        useStopServiceReceiver()
         onCreated {
+            service = this@TrackService
             NotificationCatalog.track().startForeground()
+        }
+        onDestroyed {
+            service = null
+            layerMap.values.forEach { it.removeView() }
+            layerMap.clear()
         }
     }
 
@@ -322,8 +311,8 @@ class TrackService : LifecycleService(), SavedStateRegistryOwner,
         val isRunning: StateFlow<Boolean>
             field = MutableStateFlow(false)
 
-        fun start() = startForegroundServiceByClass(TrackService::class)
-        fun stop() = stopServiceByClass(TrackService::class)
+        fun start() = IntentUtils.startForegroundServiceByClass(TrackService::class)
+        fun stop() = IntentUtils.stopServiceByClass(TrackService::class)
         fun addA11yNodePosition(node: AccessibilityNodeInfo) {
             service?.addPoint(
                 TrackPoint(

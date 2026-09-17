@@ -15,10 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import li.gkd.db.AppConfig
+import li.gkd.db.SubsAppConfig
 import li.gkd.app.data.AppInfo
 import li.gkd.app.data.RawSubscription
-import li.gkd.app.store.blockMatchAppListFlow
+import li.gkd.app.store.AppStore.blockMatchAppListFlow
 import li.gkd.app.ui.style.appItemPadding
 
 
@@ -26,7 +26,7 @@ import li.gkd.app.ui.style.appItemPadding
 fun SubsAppCard(
     rawApp: RawSubscription.RawApp,
     appInfo: AppInfo?,
-    appConfig: AppConfig?,
+    appConfig: SubsAppConfig?,
     enableSize: Int?,
     switchEnabled: Boolean,
     onClick: (() -> Unit),

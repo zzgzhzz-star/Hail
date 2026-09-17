@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
-import li.gkd.app.ui.share.Loadable
+import li.gkd.app.core.state.Loadable
 import li.gkd.app.ui.share.LocalMainViewModel
 import li.gkd.app.ui.style.scaffoldPadding
 

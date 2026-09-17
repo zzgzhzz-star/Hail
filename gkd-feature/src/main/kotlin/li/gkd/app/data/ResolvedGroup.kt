@@ -1,13 +1,13 @@
 package li.gkd.app.data
 
-import li.gkd.db.SubsConfig
+import li.gkd.db.SubsGroupConfig
 import li.gkd.db.SubsItem
 
 sealed class ResolvedGroup(
     open val group: RawSubscription.RawGroupProps,
     val subscription: RawSubscription,
     val subsItem: SubsItem,
-    val config: SubsConfig?,
+    val config: SubsGroupConfig?,
 ) {
     val excludeData by lazy { ExcludeData.parse(config?.exclude) }
 
@@ -18,7 +18,7 @@ class ResolvedAppGroup(
     override val group: RawSubscription.RawAppGroup,
     subscription: RawSubscription,
     subsItem: SubsItem,
-    config: SubsConfig?,
+    config: SubsGroupConfig?,
     val app: RawSubscription.RawApp,
     val enable: Boolean,
 ) : ResolvedGroup(group, subscription, subsItem, config) {
@@ -30,7 +30,7 @@ class ResolvedGlobalGroup(
     override val group: RawSubscription.RawGlobalGroup,
     subscription: RawSubscription,
     subsItem: SubsItem,
-    config: SubsConfig?,
+    config: SubsGroupConfig?,
 ) : ResolvedGroup(group, subscription, subsItem, config) {
     override val appId: String?
         get() = null

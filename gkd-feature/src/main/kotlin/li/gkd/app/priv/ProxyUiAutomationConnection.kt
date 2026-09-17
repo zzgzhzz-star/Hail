@@ -8,7 +8,7 @@ import priv.kit.core.Privilege
 
 // https://diff.songe.li/i/UiAutomationConnection
 class ProxyUiAutomationConnection(
-    privilegeContext: PrivilegeContext,
+    private val privilegeContext: PrivilegeContext,
 ) : IUiAutomationConnection.Stub() {
     companion object {
         private const val INITIAL_FROZEN_ROTATION_UNSPECIFIED = -1
@@ -21,8 +21,6 @@ class ProxyUiAutomationConnection(
     private var mIsShutdown = false
     private var mOwningUid = 0
     private val serverInfo = privilegeContext.serverInfo
-    private val wmManager = privilegeContext.wmManager
-    private val a11yManager = privilegeContext.a11yManager
 
     override fun connect(
         client: IAccessibilityServiceClient?,
@@ -82,7 +80,7 @@ class ProxyUiAutomationConnection(
     ) {
         val info = createUiAutomationServiceInfo()
         try {
-            a11yManager.registerUiTestAutomationService(mToken, client, info, userId, flags)
+            privilegeContext.registerUiTestAutomationService(mToken, client, info, userId, flags)
             mClient = client
         } catch (re: RemoteException) {
             throw IllegalStateException(
@@ -93,13 +91,13 @@ class ProxyUiAutomationConnection(
     }
 
     private fun unregisterUiTestAutomationServiceLocked() {
-        a11yManager.value.unregisterUiTestAutomationService(mClient)
+        privilegeContext.unregisterUiTestAutomationService(requireNotNull(mClient))
     }
 
     private fun storeRotationStateLocked() {
         try {
-            if (wmManager.value.isRotationFrozen()) {
-                mInitialFrozenRotation = wmManager.value.getDefaultDisplayRotation()
+            if (privilegeContext.isRotationFrozen()) {
+                mInitialFrozenRotation = privilegeContext.getDefaultDisplayRotation()
             }
         } catch (_: RemoteException) {
         }
@@ -109,9 +107,9 @@ class ProxyUiAutomationConnection(
         try {
             val caller = "UiAutomationConnection#restoreRotationStateLocked"
             if (mInitialFrozenRotation != INITIAL_FROZEN_ROTATION_UNSPECIFIED) {
-                wmManager.freezeRotation(mInitialFrozenRotation, caller)
+                privilegeContext.freezeRotation(mInitialFrozenRotation, caller)
             } else {
-                wmManager.thawRotation(caller)
+                privilegeContext.thawRotation(caller)
             }
         } catch (_: RemoteException) {
         }

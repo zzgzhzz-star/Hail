@@ -79,7 +79,7 @@ import li.gkd.app.ui.component.PerfIconButton
 import li.gkd.app.ui.component.PerfTopAppBar
 import li.gkd.app.ui.share.LocalMainViewModel
 import li.gkd.app.util.AndroidTarget
-import li.gkd.app.util.coilCacheDir
+import li.gkd.app.util.FolderUtils
 import li.gkd.app.util.throttle
 import me.saket.telephoto.zoomable.ZoomableContentLocation
 import me.saket.telephoto.zoomable.rememberZoomableState
@@ -108,7 +108,7 @@ private val imageLoader by lazy {
     ImageLoader.Builder(app)
         .diskCache {
             DiskCache.Builder()
-                .directory(coilCacheDir.toOkioPath())
+                .directory(FolderUtils.coilCacheDir.toOkioPath())
                 .maxSizePercent(0.1)
                 .build()
         }

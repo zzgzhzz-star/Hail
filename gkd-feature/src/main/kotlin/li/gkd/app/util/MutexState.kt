@@ -1,60 +1,35 @@
 package li.gkd.app.util
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
-import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlin.coroutines.CoroutineContext
 
 class MutexState() {
-    val mutex: Mutex = Mutex()
-    val intState = MutableStateFlow(0)
+    private val mutex = Mutex()
 
-    @OptIn(ExperimentalForInheritanceCoroutinesApi::class)
-    val state = object : StateFlow<Boolean> {
-        override val value: Boolean
-            get() = intState.value > 0
-        override val replayCache: List<Boolean>
-            get() = listOf(value)
+    val state: StateFlow<Boolean>
+        field: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
-        override suspend fun collect(collector: FlowCollector<Boolean>): Nothing {
-            var currentValue = value
-            collector.emit(currentValue)
-            intState.collect {
-                val newValue = it > 0
-                if (newValue != currentValue) {
-                    currentValue = newValue
-                    collector.emit(currentValue)
-                }
-            }
+    suspend fun <T> withStateLock(block: suspend () -> T): T {
+        mutex.lock()
+        state.value = true
+        try {
+            return block()
+        } finally {
+            state.value = false
+            mutex.unlock()
         }
     }
 
-    suspend inline fun withStateLock(block: () -> Unit): Unit = mutex.withLock {
-        intState.update { it + 1 }
+    suspend fun tryWithStateLock(block: suspend () -> Unit): Boolean {
+        if (!mutex.tryLock()) return false
+        state.value = true
         try {
             block()
+            return true
         } finally {
-            intState.update { it - 1 }
+            state.value = false
+            mutex.unlock()
         }
     }
-
-    suspend inline fun whenUnLock(block: () -> Unit) {
-        if (mutex.isLocked) return
-        withStateLock(block)
-    }
-
-    fun launchTry(
-        scope: CoroutineScope,
-        context: CoroutineContext,
-        block: suspend () -> Unit,
-    ) = scope.launchTry(context = context) {
-        withStateLock {
-            block()
-        }
-    }.let { }
 }

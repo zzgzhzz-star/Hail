@@ -28,7 +28,8 @@ object NotificationDispatcher {
             spec.id,
             Intent().apply {
                 component = MainActivity::class.componentName
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                // MainActivity 使用 singleTask，由 onNewIntent 接收跳转；不能清空已有任务栈。
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 data = spec.uri?.toUri()
             },
             pendingIntentFlags,

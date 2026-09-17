@@ -14,7 +14,7 @@ import androidx.room3.paging.PagingSourceDaoReturnTypeConverter
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
-    tableName = "activity_log_v2",
+    tableName = "activity_log",
 )
 data class ActivityLog(
     @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Int = 0,
@@ -28,25 +28,25 @@ data class ActivityLog(
         @Insert
         suspend fun insert(vararg objects: ActivityLog): List<Long>
 
-        @Query("DELETE FROM activity_log_v2")
+        @Query("DELETE FROM activity_log")
         suspend fun deleteAll()
 
-        @Query("SELECT * FROM activity_log_v2 ORDER BY ctime DESC ")
+        @Query("SELECT * FROM activity_log ORDER BY ctime DESC ")
         fun pagingSource(): PagingSource<Int, ActivityLog>
 
-        @Query("SELECT COUNT(*) FROM activity_log_v2")
+        @Query("SELECT COUNT(*) FROM activity_log")
         fun count(): Flow<Int>
 
         @Query(
             """
-            DELETE FROM activity_log_v2
+            DELETE FROM activity_log
             WHERE (
                     SELECT COUNT(*)
-                    FROM activity_log_v2
+                    FROM activity_log
                 ) > 500
                 AND ctime <= (
                     SELECT ctime
-                    FROM activity_log_v2
+                    FROM activity_log
                     ORDER BY ctime DESC
                     LIMIT 1 OFFSET 500
                 )

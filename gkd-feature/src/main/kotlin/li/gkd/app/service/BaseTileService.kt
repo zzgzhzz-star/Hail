@@ -2,47 +2,50 @@ package li.gkd.app.service
 
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import li.gkd.app.util.DefaultTileLifeImpl
-import li.gkd.app.util.OnTileLife
 
-abstract class BaseTileService : TileService(), OnTileLife by DefaultTileLifeImpl() {
-    override fun onCreate() = onCreated()
-    override fun onStartListening() = onStartListened()
-    override fun onClick() = onTileClicked()
-    override fun onStopListening() = onStopListened()
-    override fun onDestroy() = onDestroyed()
+abstract class BaseTileService : TileService() {
+    protected abstract val activeFlow: Flow<Boolean>
+    protected abstract fun onTileClick()
 
-    abstract val activeFlow: StateFlow<Boolean>
+    private val serviceScope = MainScope()
+    private var listeningJob: Job? = null
 
-    val listeningFlow = MutableStateFlow(false).apply {
-        onStartListened { value = true }
-        onStopListened { value = false }
+    override fun onStartListening() {
+        super.onStartListening()
+        val timestamp = System.currentTimeMillis()
+        if (timestamp - lastA11yFixTime > 3_000L) {
+            lastA11yFixTime = timestamp
+            fixRestartAutomatorService()
+        }
+        listeningJob?.cancel()
+        listeningJob = serviceScope.launch {
+            activeFlow.collect { active ->
+                qsTile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+                qsTile.updateTile()
+            }
+        }
     }
 
-    init {
-        onStartListened {
-            val t = System.currentTimeMillis()
-            if (t - lastA11yFixTime > 3_000L) {
-                lastA11yFixTime = t
-                fixRestartAutomatorService()
-            }
-        }
-        onTileClicked { StatusService.autoStart() }
-        scope.launch {
-            combine(
-                activeFlow,
-                listeningFlow
-            ) { v1, v2 -> v1 to v2 }.collect { (active, listening) ->
-                if (listening) {
-                    qsTile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-                    qsTile.updateTile()
-                }
-            }
-        }
+    override fun onClick() {
+        super.onClick()
+        StatusService.autoStart()
+        onTileClick()
+    }
+
+    override fun onStopListening() {
+        listeningJob?.cancel()
+        listeningJob = null
+        super.onStopListening()
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
     }
 }
 

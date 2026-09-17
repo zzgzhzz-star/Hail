@@ -9,6 +9,7 @@ import com.hjq.permissions.permission.PermissionLists
 import com.hjq.permissions.permission.base.IPermission
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.updateAndGet
@@ -16,9 +17,9 @@ import li.gkd.app.app
 import li.gkd.app.appScope
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.util.AndroidTarget
-import li.gkd.app.util.toast
-import li.gkd.app.util.updateAllAppInfo
-import li.gkd.app.util.updateAppMutex
+import li.gkd.app.data.appinfo.AppInfoRepository
+import li.gkd.app.util.ToastUtils.toast
+import li.songe.codeorigin.CallSite
 import priv.kit.core.Privilege
 
 class PermissionState(
@@ -29,7 +30,8 @@ class PermissionState(
     val resolution: PermissionResolution? = null,
     private val onChanged: (() -> Unit)? = null,
 ) {
-    val stateFlow = MutableStateFlow(false)
+    val stateFlow: StateFlow<Boolean>
+        field = MutableStateFlow(false)
     val value get() = stateFlow.value
 
     fun updateAndGet(): Boolean {
@@ -45,10 +47,10 @@ class PermissionState(
         return newValue
     }
 
-    fun checkOrToast(): Boolean {
+    fun checkOrToast(@CallSite loc: String = ""): Boolean {
         val granted = refresh()
         if (!granted) {
-            toast("请先授予「$name」")
+            toast("请先授予「$name」", loc = loc)
         }
         return granted
     }
@@ -177,9 +179,7 @@ object PermissionStates {
             purpose = "用于展示设备应用并匹配应用规则",
             permission = PermissionLists.getGetInstalledAppsPermission(),
             onChanged = {
-                if (!updateAppMutex.mutex.isLocked) {
-                    updateAllAppInfo()
-                }
+                AppInfoRepository.requestRefresh()
             },
         )
     }

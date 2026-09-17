@@ -24,12 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
-import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import li.gkd.app.MainActivity
 import li.gkd.app.R
-import li.gkd.app.store.a11yScopeAppListFlow
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.a11yScopeAppListFlow
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.ui.component.AnimatedBooleanContent
 import li.gkd.app.ui.component.AnimatedIconButton
 import li.gkd.app.ui.component.AnimationFloatingActionButton
@@ -55,8 +54,7 @@ import li.gkd.app.ui.style.scaffoldPadding
 import li.gkd.app.util.AppGroupOption
 import li.gkd.app.util.AppSortOption
 import li.gkd.app.util.findOption
-import li.gkd.app.util.launchAsFn
-import li.gkd.app.util.switchItem
+import li.gkd.app.ui.share.launchUiAction
 import li.gkd.app.util.throttle
 
 @Serializable
@@ -77,13 +75,13 @@ fun A11yScopeAppListPage() {
     val scrollBehavior = pageScrollState.scrollBehavior
     val listState = pageScrollState.listState
     pageScrollState.ResetOnChange(appInfos)
-    BackHandler(editable, vm.scope.launchAsFn {
+    BackHandler(editable, vm.scope.launchUiAction {
         context.imeController.requestHide()
         if (vm.textChanged) {
             if (!mainVm.dialogRequests.confirm(
                 title = "提示",
                 text = "当前内容未保存，是否放弃编辑？",
-            )) return@launchAsFn
+            )) return@launchUiAction
         }
         vm.setEditable(false)
     })
@@ -95,14 +93,14 @@ fun A11yScopeAppListPage() {
                 canScroll = !editable && !store.blockA11yAppListFollowMatch,
                 navigationIcon = {
                     IconButton(
-                        onClick = throttle(vm.scope.launchAsFn {
+                        onClick = throttle(vm.scope.launchUiAction {
                             if (editable) {
                                 if (vm.textChanged) {
                                     context.imeController.requestHide()
                                     if (!mainVm.dialogRequests.confirm(
                                         title = "提示",
                                         text = "当前内容未保存，是否放弃编辑？",
-                                    )) return@launchAsFn
+                                    )) return@launchUiAction
                                 }
                                 vm.setEditable(false)
                             } else {
@@ -234,11 +232,7 @@ fun A11yScopeAppListPage() {
                     AppCheckBoxCard(
                         appInfo = appInfo,
                         checked = checked,
-                        onCheckedChange = {
-                            a11yScopeAppListFlow.update {
-                                it.switchItem(appInfo.id)
-                            }
-                        },
+                        onCheckedChange = { vm.toggleApp(appInfo.id) },
                     )
                 }
                 item(ListPlaceholder.KEY, ListPlaceholder.TYPE) {

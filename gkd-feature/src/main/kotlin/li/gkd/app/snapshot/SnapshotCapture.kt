@@ -15,15 +15,16 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import li.gkd.app.a11y.A11yRuleEngine
-import li.gkd.app.a11y.topActivityFlow
+import li.gkd.app.a11y.A11yRuntime
+import li.gkd.app.a11y.currentTopActivity
 import li.gkd.app.data.ComplexSnapshot
 import li.gkd.app.data.RpcError
 import li.gkd.app.data.info2nodeList
 import li.gkd.app.notif.NotificationCatalog
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.service.ScreenshotService
-import li.gkd.app.store.storeFlow
+import li.gkd.app.data.snapshot.SnapshotRepository
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.AutomatorModeOption
 import li.gkd.app.util.BarUtils
@@ -32,7 +33,7 @@ import li.gkd.app.util.ScreenUtils
 import li.gkd.app.util.SystemDownloads
 import li.gkd.app.util.getShowActivityId
 import li.gkd.app.util.px
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 import kotlin.math.min
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -137,11 +138,11 @@ object SnapshotCapture {
         privilegeContextFlow.value?.run {
             topCpn()?.className
         }?.let { return it }
-        var topActivity = topActivityFlow.value
+        var topActivity = currentTopActivity
         var waited = 0L
         while (topActivity.appId != appId && waited < 2000) {
             delay(100.milliseconds)
-            topActivity = topActivityFlow.value
+            topActivity = currentTopActivity
             waited += 100
         }
         return topActivity.activityId.takeIf { topActivity.appId == appId }
@@ -150,9 +151,7 @@ object SnapshotCapture {
     private suspend fun isFocusedWindowSecure(appId: String): Boolean? =
         withContext(Dispatchers.IO) {
             try {
-                privilegeContextFlow.value?.run {
-                    wmManager.isFocusedWindowSecure(appId)
-                }
+                privilegeContextFlow.value?.isFocusedWindowSecure(appId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -180,7 +179,7 @@ object SnapshotCapture {
             null
         } else {
             try {
-                A11yRuleEngine.screenshot()
+                A11yRuntime.screenshot()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -231,12 +230,12 @@ object SnapshotCapture {
     }
 
     suspend fun capture(forcedCropStatusBar: Boolean = false): ComplexSnapshot {
-        val engine = A11yRuleEngine.instance ?: throw RpcError("服务不可用，请先授权")
+        val service = A11yRuntime.service ?: throw RpcError("服务不可用，请先授权")
         if (!captureMutex.tryLock()) {
             throw RpcError("正在保存快照，不可重复操作")
         }
         try {
-            val rootNode = engine.safeActiveWindow
+            val rootNode = A11yRuntime.getRoot(service)
                 ?: throw RpcError("当前应用没有无障碍信息，捕获失败")
             val snapshotId = System.currentTimeMillis()
             val appId = rootNode.packageName.toString()
@@ -247,7 +246,7 @@ object SnapshotCapture {
                 val nodes = async(Dispatchers.IO) { info2nodeList(rootNode) }
                 val activityId = async(Dispatchers.IO) { resolveActivityId(appId) }
                 val capturedScreen = async(Dispatchers.Default) {
-                    captureScreen(appId, engine.service.mode, forcedCropStatusBar)
+                    captureScreen(appId, service.mode, forcedCropStatusBar)
                 }
                 val result = capturedScreen.await()
                 try {
@@ -267,7 +266,7 @@ object SnapshotCapture {
             }
 
             try {
-                SnapshotStore.save(snapshot, screenResult.bitmap)
+                SnapshotRepository.save(snapshot, screenResult.bitmap)
             } finally {
                 screenResult.bitmap.recycle()
             }
@@ -275,7 +274,7 @@ object SnapshotCapture {
                 storeFlow.value.autoSaveSnapshotToDownloads && SystemDownloads.canSave()
             ) {
                 try {
-                    val archive = SnapshotStore.createArchive(
+                    val archive = SnapshotRepository.createArchive(
                         snapshot.id,
                         snapshot.appId,
                         snapshot.activityId,
@@ -283,7 +282,7 @@ object SnapshotCapture {
                     try {
                         SystemDownloads.save(archive)
                     } finally {
-                        SnapshotStore.deleteArchive(archive)
+                        SnapshotRepository.deleteArchive(archive)
                     }
                 } catch (e: CancellationException) {
                     throw e

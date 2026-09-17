@@ -7,14 +7,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
-import li.gkd.app.util.appIconMapFlow
+import li.gkd.app.data.appinfo.AppInfoRepository
 
 @Composable
 fun AppIcon(
     modifier: Modifier = Modifier,
     appId: String,
 ) {
-    val icon = appIconMapFlow.collectAsStateWithLifecycle().value[appId]
+    val icon = AppInfoRepository.appIconMapFlow.collectAsStateWithLifecycle().value[appId]
     val iconModifier = modifier.size(32.dp)
     if (icon != null) {
         Image(

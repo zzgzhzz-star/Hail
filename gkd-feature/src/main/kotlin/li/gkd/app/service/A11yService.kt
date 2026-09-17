@@ -3,36 +3,41 @@ package li.gkd.app.service
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.graphics.PixelFormat
 import android.view.Display
-import android.view.Gravity
-import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.google.android.accessibility.selecttospeak.SelectToSpeakService
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import li.gkd.app.a11y.A11yCommonImpl
 import li.gkd.app.a11y.A11yRuleEngine
-import li.gkd.app.a11y.topActivityFlow
+import li.gkd.app.a11y.A11yRuntime
+import li.gkd.app.a11y.A11yState
+import li.gkd.app.a11y.currentTopActivity
 import li.gkd.app.a11y.updateTopActivity
+import li.gkd.app.appScope
+import li.gkd.app.platform.lifecycle.LifecycleHooks
+import li.gkd.app.platform.overlay.KeepAliveOverlayCoordinator
 import li.gkd.app.priv.privilegeContextFlow
-import li.gkd.app.store.updateEnableAutomator
+import li.gkd.app.store.AppStore.updateEnableAutomator
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.AutomatorModeOption
-import li.gkd.app.util.DefaultA11yLifeImpl
 import li.gkd.app.util.LogUtils
-import li.gkd.app.util.OnA11yLife
 import li.gkd.app.util.componentName
-import li.gkd.app.util.runMainPost
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 import kotlin.coroutines.resume
 
 @SuppressLint("AccessibilityPolicy")
-abstract class A11yService : AccessibilityService(), OnA11yLife by DefaultA11yLifeImpl(),
-    A11yCommonImpl {
+abstract class A11yService : AccessibilityService(), A11yCommonImpl {
+    private val lifecycleHooks = LifecycleHooks()
+    override val scope = MainScope()
     override val mode get() = AutomatorModeOption.A11yMode
     override val windowNodeInfo: AccessibilityNodeInfo? get() = rootInActiveWindow
     override val windowInfos: List<AccessibilityWindowInfo> get() = windows
@@ -70,13 +75,10 @@ abstract class A11yService : AccessibilityService(), OnA11yLife by DefaultA11yLi
 
     override val ruleEngine by lazy { A11yRuleEngine(this) }
 
-    override fun onCreate() = onCreated()
-    override fun onServiceConnected() = onA11yConnected()
     override fun onInterrupt() {}
-    override fun onDestroy() = onDestroyed()
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = ruleEngine.onA11yEvent(event)
 
-    val startTime = System.currentTimeMillis()
+    private val startTime = System.currentTimeMillis()
     override var justStarted: Boolean = true
         get() {
             if (field) {
@@ -100,100 +102,105 @@ abstract class A11yService : AccessibilityService(), OnA11yLife by DefaultA11yLi
     val wm by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
 
     init {
-        useLogLifecycle()
-        useAliveFlow(isRunning)
-        onA11yConnected { instance = this }
-        onDestroyed { instance = null }
-        onCreated {
+        lifecycleHooks.useLogLifecycle(this)
+        lifecycleHooks.onCreated {
+            isRunning.value = true
             if (currentAppUseA11y) {
                 updateEnableAutomator(true)
             } else {
                 toast("当前为自动化模式，无障碍将自动关闭", forced = true)
-                runMainPost(1) { shutdown(true) }
+                scope.launch {
+                    delay(1)
+                    shutdown(true)
+                }
+            }
+            StatusService.autoStart()
+            scope.launch {
+                delay(3000)
+                if (!(destroyed || connected)) {
+                    toast("无障碍启动超时，请尝试关闭重启", forced = true)
+                }
             }
         }
-        onDestroyed {
+        lifecycleHooks.onDestroyed {
+            scope.cancel()
+            if (instance === this) {
+                instance = null
+            }
+            isRunning.value = false
+            releaseKeepAliveOverlayAfterHandoff()
             if (tempShutdownFlag) {
                 toast("无障碍局部关闭")
             } else {
                 toast("无障碍已关闭")
                 updateEnableAutomator(false)
             }
-        }
-        useAliveOverlayView()
-        onCreated { StatusService.autoStart() }
-        onDestroyed {
-            synchronized(topActivityFlow) {
+            A11yState.withTopActivityLock {
                 privilegeContextFlow.value?.run {
                     topCpn()?.let { cpn ->
                         // com.android.systemui
-                        if (!topActivityFlow.value.sameAs(cpn.packageName, cpn.className)) {
+                        if (!currentTopActivity.sameAs(cpn.packageName, cpn.className)) {
                             updateTopActivity(cpn.packageName, cpn.className)
                         }
                     }
                 }
             }
+            destroyed = true
         }
-        onDestroyed { destroyed = true }
-        onA11yConnected {
-            connected = true
-            toast("无障碍已启动")
-            if (currentAppUseA11y) {
-                ruleEngine.onA11yConnected()
-            }
+    }
+
+    private fun attachKeepAliveOverlay() {
+        if (!KeepAliveOverlayCoordinator.acquire(
+                source = KeepAliveOverlayCoordinator.Source.Accessibility,
+                owner = this,
+                context = this,
+                windowType = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            )
+        ) {
+            toast("添加无障碍保活失败\n请尝试重启无障碍")
         }
-        onCreated {
-            runMainPost(3000) {
-                if (!(destroyed || connected)) {
-                    toast("无障碍启动超时，请尝试关闭重启", forced = true)
-                }
-            }
+    }
+
+    private fun releaseKeepAliveOverlayAfterHandoff() {
+        appScope.launch {
+            KeepAliveOverlayCoordinator.releaseAfterHandoff(
+                source = KeepAliveOverlayCoordinator.Source.Accessibility,
+                owner = this@A11yService,
+                replacement = KeepAliveOverlayCoordinator.Source.Status
+                    .takeIf { StatusService.isRunning.value },
+            )
         }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        lifecycleHooks.dispatchCreated()
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        LogUtils.d("onA11yConnected -> ${this::class.simpleName}")
+        instance = this
+        attachKeepAliveOverlay()
+        connected = true
+        toast("无障碍已启动")
+        if (currentAppUseA11y) {
+            A11yRuntime.onA11yConnected(this)
+        }
+    }
+
+    override fun onDestroy() {
+        lifecycleHooks.dispatchDestroyed()
+        super.onDestroy()
     }
 
     companion object {
         val a11yCn by lazy { SelectToSpeakService::class.componentName }
-        val isRunning = MutableStateFlow(false)
+        val isRunning: StateFlow<Boolean>
+            field = MutableStateFlow(false)
 
         @Volatile
         var instance: A11yService? = null
             private set
     }
-}
-
-private fun A11yService.useAliveOverlayView() {
-    val context = this
-    var aliveView: View? = null
-    fun removeA11View() {
-        if (aliveView != null) {
-            wm.removeView(aliveView)
-            aliveView = null
-        }
-    }
-
-    fun addA11View() {
-        removeA11View()
-        val tempView = View(context)
-        val lp = WindowManager.LayoutParams().apply {
-            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-            format = PixelFormat.TRANSLUCENT
-            flags =
-                flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-            gravity = Gravity.START or Gravity.TOP
-            width = 1
-            height = 1
-            packageName = context.packageName
-        }
-        try {
-            // 某些设备 android.view.WindowManager$BadTokenException
-            wm.addView(tempView, lp)
-            aliveView = tempView
-        } catch (e: Throwable) {
-            aliveView = null
-            LogUtils.d(e)
-            toast("添加无障碍保活失败\n请尝试重启无障碍")
-        }
-    }
-    onA11yConnected { addA11View() }
-    onDestroyed { removeA11View() }
 }

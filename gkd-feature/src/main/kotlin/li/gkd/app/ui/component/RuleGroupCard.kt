@@ -10,34 +10,41 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import li.gkd.db.CategoryConfig
 import li.gkd.app.data.ExcludeData
 import li.gkd.app.data.RawSubscription
-import li.gkd.db.SubsConfig
-import li.gkd.app.ui.getGlobalGroupChecked
+import li.gkd.app.a11y.launcherAppId
+import li.gkd.app.domain.rule.RuleGroupPolicy
 import li.gkd.app.ui.icon.ResetSettings
 import li.gkd.app.ui.share.noRippleClickable
-import li.gkd.app.util.getGroupEnable
+import li.gkd.app.data.appinfo.AppInfoRepository
 import li.gkd.app.util.throttle
 import java.util.Objects
+import li.gkd.db.SubsCategoryConfig
+import li.gkd.db.SubsGroupConfig
 
 
 @Composable
@@ -46,8 +53,8 @@ fun RuleGroupCard(
     subs: RawSubscription,
     appId: String?,
     group: RawSubscription.RawGroupProps,
-    subsConfig: SubsConfig?,
-    categoryConfig: CategoryConfig?,
+    subsConfig: SubsGroupConfig?,
+    categoryConfig: SubsCategoryConfig?,
     switchEnabled: Boolean = true,
     onOpen: () -> Unit,
     onCheckedChange: (Boolean) -> Unit,
@@ -55,6 +62,7 @@ fun RuleGroupCard(
     onFocusHandled: () -> Unit = {},
     isSelectedMode: Boolean = false,
     isSelected: Boolean = false,
+    selectionEnabled: Boolean = true,
     onLongClick: () -> Unit = {},
     onSelectedChange: () -> Unit = {},
 ) {
@@ -87,15 +95,18 @@ fun RuleGroupCard(
     val excludeData = remember(subsConfig?.exclude) {
         ExcludeData.parse(subsConfig?.exclude)
     }
+    val systemApps by AppInfoRepository.systemAppsFlow.collectAsStateWithLifecycle()
     val checked = if (inGlobalAppPage) {
-        getGlobalGroupChecked(
+        RuleGroupPolicy.getGlobalGroupChecked(
             subs,
             excludeData,
             group,
             appId,
+            launcherAppId,
+            systemApps,
         )
     } else {
-        getGroupEnable(
+        RuleGroupPolicy.getGroupEnabled(
             group,
             subsConfig,
             category,
@@ -117,9 +128,19 @@ fun RuleGroupCard(
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
-                onClickLabel = "打开规则详情弹窗",
-                onLongClickLabel = "进入多选模式"
-            ),
+                enabled = !isSelectedMode || selectionEnabled,
+                onClickLabel = if (isSelectedMode) {
+                    if (isSelected) "取消选中" else "选中"
+                } else "打开规则详情弹窗",
+                onLongClickLabel = if (isSelectedMode) "选中" else "进入多选模式",
+            )
+            .semantics {
+                if (isSelectedMode) {
+                    selected = isSelected
+                    role = Role.Checkbox
+                    stateDescription = if (isSelected) "已选中" else "未选中"
+                }
+            },
         shape = MaterialTheme.shapes.extraSmall,
         colors = CardDefaults.cardColors(
             containerColor = containerColor.value
@@ -175,38 +196,36 @@ fun RuleGroupCard(
                         )
                     }
                 }
-                val percent = usePercentAnimatable(!isSelectedMode)
-                val switchModifier = Modifier
-                    .noRippleClickable(onClick = {})
-                    .padding(8.dp)
-                    .graphicsLayer(
-                        alpha = 0.5f + (1 - 0.5f) * percent.value,
-                    )
-                if (!group.valid) {
-                    InnerDisableSwitch(
-                        modifier = switchModifier,
-                        valid = false,
-                        isSelectedMode = isSelectedMode,
-                    )
-                } else if (checked != null) {
-                    PerfSwitch(
-                        key = Objects.hash(subs.id, appId, group.key),
-                        modifier = switchModifier.minimumInteractiveComponentSize(),
-                        checked = checked,
-                        enabled = switchEnabled,
-                        onCheckedChange = if (isSelectedMode) null else onCheckedChange,
-                        thumbContent = if (canRest) ({
-                            PerfIcon(
-                                imageVector = ResetSettings,
-                                modifier = Modifier.size(8.dp)
-                            )
-                        }) else null,
+                if (isSelectedMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = null,
+                        enabled = selectionEnabled,
+                        modifier = Modifier.padding(8.dp).minimumInteractiveComponentSize(),
                     )
                 } else {
-                    InnerDisableSwitch(
-                        modifier = switchModifier,
-                        isSelectedMode = isSelectedMode,
-                    )
+                    val switchModifier = Modifier
+                        .noRippleClickable(onClick = {})
+                        .padding(8.dp)
+                    if (!group.valid) {
+                        InnerDisableSwitch(modifier = switchModifier, valid = false)
+                    } else if (checked != null) {
+                        PerfSwitch(
+                            key = Objects.hash(subs.id, appId, group.key),
+                            modifier = switchModifier.minimumInteractiveComponentSize(),
+                            checked = checked,
+                            enabled = switchEnabled,
+                            onCheckedChange = onCheckedChange,
+                            thumbContent = if (canRest) ({
+                                PerfIcon(
+                                    imageVector = ResetSettings,
+                                    modifier = Modifier.size(8.dp),
+                                )
+                            }) else null,
+                        )
+                    } else {
+                        InnerDisableSwitch(modifier = switchModifier)
+                    }
                 }
             }
             if (hasExcludeActivity) {
@@ -226,54 +245,4 @@ fun RuleGroupCard(
             }
         }
     }
-}
-
-fun getActualGroupChecked(
-    subs: RawSubscription,
-    group: RawSubscription.RawGroupProps,
-    appId: String?,
-    subsConfig: SubsConfig?,
-    categoryConfig: CategoryConfig?,
-): Boolean {
-    if (!group.valid) return false
-    val inGlobalAppPage = appId != null && group is RawSubscription.RawGlobalGroup
-    return if (inGlobalAppPage) {
-        getGlobalGroupChecked(
-            subs,
-            ExcludeData.parse(subsConfig?.exclude),
-            group,
-            appId,
-        )
-    } else {
-        getGroupEnable(
-            group,
-            subsConfig,
-            subs.getCategory(group.name),
-            categoryConfig,
-        )
-    } ?: false
-}
-
-
-@Composable
-fun BatchActionButtonGroup(
-    onDisable: () -> Unit,
-    onEnable: () -> Unit,
-    onReset: () -> Unit,
-) {
-    PerfIconButton(
-        imageVector = PerfIcon.ToggleOff,
-        contentDescription = "批量关闭规则",
-        onClick = throttle(onDisable),
-    )
-    PerfIconButton(
-        imageVector = PerfIcon.ToggleOn,
-        contentDescription = "批量打开规则",
-        onClick = throttle(onEnable),
-    )
-    PerfIconButton(
-        imageVector = ResetSettings,
-        contentDescription = "批量重置规则开关",
-        onClick = throttle(onReset),
-    )
 }

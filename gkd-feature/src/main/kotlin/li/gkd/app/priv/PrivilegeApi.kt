@@ -3,6 +3,7 @@ package li.gkd.app.priv
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import li.gkd.app.app
 import li.gkd.app.appScope
@@ -12,17 +13,18 @@ import li.gkd.app.service.StatusService
 import li.gkd.app.service.currentAppBlocked
 import li.gkd.app.service.currentAppUseA11y
 import li.gkd.app.service.updateTopTaskAppId
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.util.LogUtils
-import li.gkd.app.util.launchTry
-import li.gkd.app.util.toast
+import li.gkd.app.util.launchLogged
+import li.gkd.app.util.ToastUtils.toast
 import priv.kit.core.Privilege
 import priv.kit.core.PrivilegeServerInfo
 import priv.kit.core.userservice.PrivilegeUserServiceSpec
 
 val currentUserId by lazy { android.os.Process.myUserHandle().hashCode() }
 
-val privilegeContextFlow = MutableStateFlow<PrivilegeContext?>(null)
+val privilegeContextFlow: StateFlow<PrivilegeContext?>
+    field = MutableStateFlow(null)
 
 private val userServiceSpec = PrivilegeUserServiceSpec(
     serviceClassName = UserService::class.java.name,
@@ -83,7 +85,7 @@ private suspend fun updatePrivilegeContext(serverInfo: PrivilegeServerInfo?) =
     }
 
 fun initPrivilege() {
-    appScope.launchTry {
+    appScope.launchLogged {
         Privilege.serverState.collect { serverInfo ->
             LogUtils.d("Privilege.serverState", serverInfo)
             try {

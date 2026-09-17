@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CenterFocusWeak
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
@@ -199,6 +201,8 @@ object PerfIcon {
     val VerifiedUser get() = Icons.Outlined.VerifiedUser
     val Autorenew get() = Icons.Default.Autorenew
     val UnfoldMore get() = Icons.Default.UnfoldMore
+    val ExpandLess get() = Icons.Default.ExpandLess
+    val ExpandMore get() = Icons.Default.ExpandMore
     val Memory get() = Icons.Default.Memory
     val Notifications get() = Icons.Outlined.Notifications
     val Layers get() = Icons.Outlined.Layers

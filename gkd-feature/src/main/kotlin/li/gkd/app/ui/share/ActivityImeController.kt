@@ -82,7 +82,6 @@ class ActivityImeController(
         }
         fullyHiddenFlow.value = true
         showAnimationRunningFlow.value = false
-        owner.lifecycle.removeObserver(this)
     }
 
     @MainThread

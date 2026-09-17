@@ -1,5 +1,7 @@
 package li.gkd.app.ui.share
 
+import li.gkd.app.core.state.Loadable
+
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,34 +11,43 @@ import kotlinx.coroutines.flow.map
 import li.gkd.app.MainViewModel
 import li.gkd.app.data.AppInfo
 import li.gkd.app.data.RawSubscription
-import li.gkd.db.Db
-import li.gkd.app.store.SettingsStore
-import li.gkd.app.store.blockMatchAppListFlow
-import li.gkd.app.store.storeFlow
+import li.gkd.app.data.settings.SettingsStore
+import li.gkd.app.store.AppStore.blockMatchAppListFlow
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.util.AppGroupOption
 import li.gkd.app.util.AppSortOption
-import li.gkd.app.util.appInfoMapFlow
+import li.gkd.app.data.appinfo.AppInfoRepository
 import li.gkd.app.util.collator
-import li.gkd.app.util.visibleAppInfosFlow
+import li.gkd.db.ActionLog
+import li.gkd.db.Db
 
 class AppFilter(
-    val searchStrFlow: MutableStateFlow<String>,
+    mutableSearchStrFlow: MutableStateFlow<String>,
     val appListFlow: StateFlow<List<AppInfo>>,
     val showAllAppFlow: StateFlow<Boolean>,
-)
+) {
+    val searchStrFlow: StateFlow<String>
+        field = mutableSearchStrFlow
+
+    fun updateSearchStr(value: String) {
+        searchStrFlow.value = value
+    }
+}
 
 fun BaseViewModel.subsAppActionOrderMapState(
     subsId: Long,
+    actionLogDao: ActionLog.ActionLogDao = Db.actionLogDao,
 ): StateFlow<Loadable<Map<String, Int>>> =
-    Db.actionLogDao.queryLatestUniqueAppIds(subsId).map { appIds ->
+    actionLogDao.queryLatestUniqueAppIds(subsId).map { appIds ->
         appIds.mapIndexed { index, appId -> appId to index }.toMap()
     }.stateLoadable()
 
 fun BaseViewModel.globalGroupAppOrderListState(
     subsId: Long,
     groupKey: Int,
+    actionLogDao: ActionLog.ActionLogDao = Db.actionLogDao,
 ): StateFlow<Loadable<List<String>>> =
-    Db.actionLogDao.queryLatestUniqueAppIds(subsId, groupKey).stateLoadable()
+    actionLogDao.queryLatestUniqueAppIds(subsId, groupKey).stateLoadable()
 
 fun BaseViewModel.useAppFilter(
     mainVm: MainViewModel,
@@ -50,7 +61,7 @@ fun BaseViewModel.useAppFilter(
     val debounceSearchStrFlow = searchStrFlow.debounce(200)
         .stateInit(searchStrFlow.value)
     val resultFlow = combine(
-        visibleAppInfosFlow,
+        AppInfoRepository.visibleAppInfosFlow,
         storeFlow,
         appOrderListState,
         mainVm.appVisitOrderMapState,
@@ -74,7 +85,7 @@ fun BaseViewModel.useAppFilter(
     }.stateInit(
         buildAppFilterResult(
             inputs = AppFilterInputs(
-                visibleApps = visibleAppInfosFlow.value,
+                visibleApps = AppInfoRepository.visibleAppInfosFlow.value,
                 settings = storeFlow.value,
                 appOrderList = appOrderListState.value.value.orEmpty(),
                 appVisitOrderMap = mainVm.appVisitOrderMapState.value.value.orEmpty(),
@@ -87,7 +98,7 @@ fun BaseViewModel.useAppFilter(
         )
     )
     return AppFilter(
-        searchStrFlow = searchStrFlow,
+        mutableSearchStrFlow = searchStrFlow,
         appListFlow = resultFlow.mapNew { it.apps },
         showAllAppFlow = resultFlow.mapNew { it.showAllApps },
     )
@@ -161,7 +172,7 @@ fun BaseViewModel.useSubsAppFilter(
     appActionOrderMapState: StateFlow<Loadable<Map<String, Int>>>,
 ): Flow<List<RawSubscription.RawApp>> {
     val filterInputsFlow = combine(
-        appInfoMapFlow,
+        AppInfoRepository.appInfoMapFlow,
         storeFlow,
         appActionOrderMapState,
         mainVm.appVisitOrderMapState,

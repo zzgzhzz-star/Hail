@@ -12,14 +12,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import li.gkd.app.a11y.A11yCommonImpl
 import li.gkd.app.a11y.A11yRuleEngine
-import li.gkd.app.store.updateEnableAutomator
+import li.gkd.app.a11y.A11yRuntime
+import li.gkd.app.store.AppStore.updateEnableAutomator
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.AutomatorModeOption
 import li.gkd.app.util.LogUtils
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 
 class AutomationService private constructor(
     private val privilegeContext: PrivilegeContext,
@@ -72,7 +74,7 @@ class AutomationService private constructor(
         connected = true
         toast("自动化已启动")
         updateEnableAutomator(true)
-        ruleEngine.onA11yConnected()
+        A11yRuntime.onA11yConnected(this)
     }
 
     private fun disconnect() {
@@ -120,9 +122,7 @@ class AutomationService private constructor(
 
         fun isOtherUiAutomationRunning(): Boolean {
             if (uiAutomationFlow.value != null) return false
-            return privilegeContextFlow.value?.run {
-                a11yManager.isUiAutomationRunning()
-            } == true
+            return privilegeContextFlow.value?.isUiAutomationRunning() == true
         }
 
         fun showOccupiedWarning(silent: Boolean = false) {
@@ -130,6 +130,10 @@ class AutomationService private constructor(
             if (!silent) {
                 uiAutomationOccupiedFlow.value = true
             }
+        }
+
+        fun dismissOccupiedWarning() {
+            uiAutomationOccupiedFlow.value = false
         }
 
         fun tryConnect(silent: Boolean = false) {
@@ -173,8 +177,10 @@ class AutomationService private constructor(
     }
 }
 
-val uiAutomationFlow = MutableStateFlow<AutomationService?>(null)
-val uiAutomationOccupiedFlow = MutableStateFlow(false)
+val uiAutomationFlow: StateFlow<AutomationService?>
+    field = MutableStateFlow(null)
+val uiAutomationOccupiedFlow: StateFlow<Boolean>
+    field = MutableStateFlow(false)
 
 private val remoteCallbackThreadField by lazy {
     if (AndroidTarget.P) {

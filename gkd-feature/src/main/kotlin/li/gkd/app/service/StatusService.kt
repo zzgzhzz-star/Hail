@@ -1,47 +1,40 @@
 package li.gkd.app.service
 
-import android.app.Service
-import android.content.Intent
+import android.view.WindowManager
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import li.gkd.app.META
-import li.gkd.app.MainViewModel
 import li.gkd.app.a11y.useA11yServiceEnabledFlow
 import li.gkd.app.app
 import li.gkd.app.notif.NotificationCatalog
 import li.gkd.app.permission.PermissionStates
+import li.gkd.app.platform.overlay.KeepAliveOverlayCoordinator
 import li.gkd.app.priv.PrivilegeServiceStatus
 import li.gkd.app.priv.privilegeServiceStatusFlow
 import li.gkd.app.priv.uiAutomationFlow
-import li.gkd.app.store.actionCountFlow
-import li.gkd.app.store.storeFlow
-import li.gkd.app.util.DefaultSimpleLifeImpl
-import li.gkd.app.util.OnSimpleLife
-import li.gkd.app.util.RuleSummary
-import li.gkd.app.util.appInfoMapFlow
-import li.gkd.app.util.getSubsStatus
-import li.gkd.app.util.ruleSummaryFlow
-import li.gkd.app.util.startForegroundServiceByClass
-import li.gkd.app.util.stopServiceByClass
+import li.gkd.app.store.AppStore.actionCountFlow
+import li.gkd.app.store.AppStore.storeFlow
+import li.gkd.app.domain.rule.RuleSummary
+import li.gkd.app.data.appinfo.AppInfoRepository
+import li.gkd.app.data.subscription.SubscriptionState
+import li.gkd.app.ui.share.statusText
+import li.gkd.app.util.IntentUtils
 import kotlin.time.Duration.Companion.milliseconds
 
-class StatusService : Service(), OnSimpleLife by DefaultSimpleLifeImpl() {
-    override fun onBind(intent: Intent?) = null
-    override fun onCreate() = onCreated()
-    override fun onDestroy() = onDestroyed()
+class StatusService : LifecycleHookService() {
 
-    val a11yServiceEnabledFlow = useA11yServiceEnabledFlow()
-
-    fun statusTriple(): Triple<String, String, String?> {
+    private val a11yServiceEnabledFlow by lazy { useA11yServiceEnabledFlow(lifecycleScope) }
+    private fun statusTriple(): Triple<String, String, String?> {
         val abRunning = A11yService.isRunning.value
         val automationRunning = uiAutomationFlow.value != null
         val store = storeFlow.value
-        val ruleSummary = ruleSummaryFlow.value
+        val ruleSummary = SubscriptionState.ruleSummaryFlow.value
         val count = actionCountFlow.value
         val privilegeServiceStatus = privilegeServiceStatusFlow.value
         val title = if (store.useCustomNotifText) {
@@ -60,7 +53,7 @@ class StatusService : Service(), OnSimpleLife by DefaultSimpleLifeImpl() {
                 } else if (PermissionStates.writeSecureSettings.updateAndGet()) {
                     if (store.enableAutomator && store.enableBlockA11yAppList && a11yPartDisabledFlow.value) {
                         val name =
-                            appInfoMapFlow.value[topAppIdFlow.value]?.name ?: topAppIdFlow.value
+                            AppInfoRepository.appInfoMapFlow.value[topAppIdFlow.value]?.name ?: topAppIdFlow.value
                         "局部关闭 · $name"
                     } else {
                         "无障碍已关闭"
@@ -73,7 +66,7 @@ class StatusService : Service(), OnSimpleLife by DefaultSimpleLifeImpl() {
                 val text =
                     if (store.enableAutomator && store.enableBlockA11yAppList && a11yPartDisabledFlow.value) {
                         val name =
-                            appInfoMapFlow.value[topAppIdFlow.value]?.name ?: topAppIdFlow.value
+                            AppInfoRepository.appInfoMapFlow.value[topAppIdFlow.value]?.name ?: topAppIdFlow.value
                         "局部关闭 · $name"
                     } else {
                         "自动化已关闭"
@@ -89,24 +82,47 @@ class StatusService : Service(), OnSimpleLife by DefaultSimpleLifeImpl() {
                 defaultStatusNotification.uri
             )
         } else {
-            Triple(title, getSubsStatus(ruleSummary, count), defaultStatusNotification.uri)
+            Triple(title, ruleSummary.statusText(count), defaultStatusNotification.uri)
         }
     }
 
     init {
-        useAliveFlow(isRunning)
-        useAliveToast(
+        useServicePresence(
+            stateFlow = isRunning,
             name = "常驻通知",
-            delayMillis = if (app.justStarted) 1000 else 0,
+            startToastDelayMillis = if (app.justStarted) 1000 else 0,
         )
         onCreated {
             if (!defaultStatusNotification.startForeground()) return@onCreated
-            scope.launch {
+            lifecycleScope.launch {
+                combine(
+                    A11yService.isRunning,
+                    KeepAliveOverlayCoordinator.accessibilityAttached,
+                ) { a11yRunning, a11yOverlayAttached ->
+                    a11yRunning to a11yOverlayAttached
+                }.distinctUntilChanged().collectLatest {
+                    val (a11yRunning, a11yOverlayAttached) = it
+                    if (a11yRunning && a11yOverlayAttached) {
+                        KeepAliveOverlayCoordinator.releaseAfterHandoff(
+                            source = KeepAliveOverlayCoordinator.Source.Status,
+                            owner = this@StatusService,
+                        )
+                    } else {
+                        KeepAliveOverlayCoordinator.acquire(
+                            source = KeepAliveOverlayCoordinator.Source.Status,
+                            owner = this@StatusService,
+                            context = this@StatusService,
+                            windowType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                        )
+                    }
+                }
+            }
+            lifecycleScope.launch {
                 combine(
                     A11yService.isRunning,
                     uiAutomationFlow,
                     storeFlow,
-                    ruleSummaryFlow,
+                    SubscriptionState.ruleSummaryFlow,
                     privilegeServiceStatusFlow,
                     a11yServiceEnabledFlow,
                     PermissionStates.writeSecureSettings.stateFlow,
@@ -115,50 +131,35 @@ class StatusService : Service(), OnSimpleLife by DefaultSimpleLifeImpl() {
                     actionCountFlow.debounce(1000L.milliseconds),
                 ) {
                     statusTriple()
+                }.collect {
+                    NotificationCatalog.status(
+                        title = it.first,
+                        text = it.second,
+                        uri = it.third,
+                    ).startForeground()
                 }
-                    .stateIn(
-                        scope,
-                        SharingStarted.Eagerly,
-                        Triple(
-                            defaultStatusNotification.title,
-                            defaultStatusNotification.text,
-                            defaultStatusNotification.uri,
-                        )
-                    )
-                    .collect {
-                        NotificationCatalog.status(
-                            title = it.first,
-                            text = it.second,
-                            uri = it.third,
-                        ).startForeground()
-                    }
             }
+        }
+        onDestroyed {
+            KeepAliveOverlayCoordinator.release(
+                source = KeepAliveOverlayCoordinator.Source.Status,
+                owner = this,
+            )
         }
     }
 
     companion object {
-        val isRunning = MutableStateFlow(false)
+        val isRunning: StateFlow<Boolean>
+            field = MutableStateFlow(false)
+
         val needRestart
             get() = storeFlow.value.enableStatusService
                     && !isRunning.value
                     && PermissionStates.notification.updateAndGet()
                     && PermissionStates.foregroundServiceSpecialUse.updateAndGet()
 
-        fun start() = startForegroundServiceByClass(StatusService::class)
-        fun stop() = stopServiceByClass(StatusService::class)
-        suspend fun requestStart(mainVm: MainViewModel) {
-            if (
-                !mainVm.permissionRequests.ensurePermissions(
-                    PermissionStates.foregroundServiceSpecialUse,
-                    PermissionStates.notification,
-                )
-            ) {
-                return
-            }
-            start()
-            storeFlow.update { it.copy(enableStatusService = true) }
-        }
-
+        fun start() = IntentUtils.startForegroundServiceByClass(StatusService::class)
+        fun stop() = IntentUtils.stopServiceByClass(StatusService::class)
         private var lastAutoStart = 0L
         fun autoStart() {
             if (System.currentTimeMillis() - lastAutoStart < 1000) return

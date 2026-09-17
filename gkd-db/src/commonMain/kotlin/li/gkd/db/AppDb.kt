@@ -13,16 +13,17 @@ import androidx.room3.migration.AutoMigrationSpec
 import kotlinx.serialization.json.Json
 
 @Database(
-    version = 14,
+    version = 16,
     entities = [
         SubsItem::class,
         Snapshot::class,
-        SubsConfig::class,
-        CategoryConfig::class,
+        SubsAppGroupConfig::class,
+        SubsGlobalGroupConfig::class,
+        SubsCategoryConfig::class,
         ActionLog::class,
         ActivityLog::class,
-        AppConfig::class,
-        AppVisitLog::class,
+        SubsAppConfig::class,
+        AppLastVisit::class,
         A11yEventLog::class,
     ],
     autoMigrations = [
@@ -39,6 +40,7 @@ import kotlinx.serialization.json.Json
         AutoMigration(from = 11, to = 12),
         AutoMigration(from = 12, to = 13),
         AutoMigration(from = 13, to = 14),
+        AutoMigration(from = 15, to = 16, spec = Migration15To16Spec::class),
     ]
 )
 @ColumnTypeConverters(DbConverters::class)
@@ -46,12 +48,13 @@ import kotlinx.serialization.json.Json
 abstract class AppDb : RoomDatabase() {
     abstract fun subsItemDao(): SubsItem.SubsItemDao
     abstract fun snapshotDao(): Snapshot.SnapshotDao
-    abstract fun subsConfigDao(): SubsConfig.SubsConfigDao
-    abstract fun appConfigDao(): AppConfig.AppConfigDao
-    abstract fun categoryConfigDao(): CategoryConfig.CategoryConfigDao
+    abstract fun subsAppGroupConfigDao(): SubsAppGroupConfig.SubsAppGroupConfigDao
+    abstract fun subsGlobalGroupConfigDao(): SubsGlobalGroupConfig.SubsGlobalGroupConfigDao
+    abstract fun subsAppConfigDao(): SubsAppConfig.SubsAppConfigDao
+    abstract fun subsCategoryConfigDao(): SubsCategoryConfig.SubsCategoryConfigDao
     abstract fun actionLogDao(): ActionLog.ActionLogDao
     abstract fun activityLogDao(): ActivityLog.ActivityLogDao
-    abstract fun appVisitLogDao(): AppVisitLog.AppLogDao
+    abstract fun appLastVisitDao(): AppLastVisit.AppLastVisitDao
     abstract fun a11yEventLogDao(): A11yEventLog.A11yEventLogDao
 }
 

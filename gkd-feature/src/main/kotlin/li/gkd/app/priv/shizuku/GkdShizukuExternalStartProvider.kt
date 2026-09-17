@@ -2,11 +2,11 @@ package li.gkd.app.priv.shizuku
 
 import android.content.Context
 import android.content.pm.PackageManager
+import kotlinx.atomicfu.atomic
 import priv.kit.core.PrivilegeStartupLogListener
 import priv.kit.ui.PrivilegeUiExternalStartSnapshot
 import priv.kit.ui.PrivilegeUiStreamingExternalStartProvider
 import rikka.shizuku.Shizuku
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -38,10 +38,10 @@ object GkdShizukuExternalStartProvider :
         }
 
         return suspendCancellableCoroutine { continuation ->
-            val completed = AtomicBoolean(false)
+            val completed = atomic(false)
             lateinit var listener: Shizuku.OnRequestPermissionResultListener
             fun finish(result: PrivilegeUiExternalStartSnapshot) {
-                if (!completed.compareAndSet(false, true)) return
+                if (!completed.compareAndSet(expect = false, update = true)) return
                 Shizuku.removeRequestPermissionResultListener(listener)
                 if (continuation.isActive) continuation.resume(result)
             }
@@ -52,7 +52,7 @@ object GkdShizukuExternalStartProvider :
                 }
             }
             continuation.invokeOnCancellation {
-                if (completed.compareAndSet(false, true)) {
+                if (completed.compareAndSet(expect = false, update = true)) {
                     Shizuku.removeRequestPermissionResultListener(listener)
                 }
             }

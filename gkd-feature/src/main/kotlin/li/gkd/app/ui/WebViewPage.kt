@@ -35,7 +35,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import li.gkd.app.META
 import li.gkd.app.MainActivity
-import li.gkd.app.data.Value
 import li.gkd.app.ui.component.PerfIcon
 import li.gkd.app.ui.component.PerfIconButton
 import li.gkd.app.ui.component.PerfTopAppBar
@@ -45,9 +44,9 @@ import li.gkd.app.ui.style.scaffoldPadding
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.client
-import li.gkd.app.util.copyText
-import li.gkd.app.util.launchAsFn
-import li.gkd.app.util.openUri
+import li.gkd.app.util.ToastUtils.copyText
+import li.gkd.app.ui.share.launchUiAction
+import li.gkd.app.util.IntentUtils
 import li.gkd.app.util.throttle
 
 @Serializable
@@ -59,7 +58,7 @@ fun WebViewPage(route: WebViewRoute) {
     val mainVm = LocalMainViewModel.current
     val webViewState = rememberWebViewState(url = initUrl)
     val webViewClient = remember { GkdWebViewClient() }
-    val webView = remember { Value<WebView?>(null) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
     Scaffold(modifier = Modifier, topBar = {
         PerfTopAppBar(
             modifier = Modifier.fillMaxWidth(),
@@ -78,7 +77,7 @@ fun WebViewPage(route: WebViewRoute) {
                 } else {
                     Text(
                         // webViewState.pageTitle 在调用 reload 后会变成 null
-                        text = webViewState.pageTitle ?: webView.value?.title ?: "",
+                        text = webViewState.pageTitle ?: webView?.title ?: "",
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -89,7 +88,7 @@ fun WebViewPage(route: WebViewRoute) {
                 if (chromeVersion in 1..<MINI_CHROME_VERSION) {
                     PerfIconButton(
                         imageVector = PerfIcon.WarningAmber,
-                        onClick = throttle(mainVm.scope.launchAsFn {
+                        onClick = throttle(mainVm.scope.launchUiAction {
                             mainVm.dialogRequests.showMessage(
                                 title = "兼容性提示",
                                 text = "检测到您的系统内置浏览器版本($chromeVersion)过低, 可能无法正常浏览网页文档\n\n建议自行升级版本后重启 GKD 再查看文档, 或点击右上角后在外部浏览器打开查阅\n\n若能正常浏览文档请忽略此项提示",
@@ -114,7 +113,7 @@ fun WebViewPage(route: WebViewRoute) {
                                 },
                                 onClick = {
                                     expanded = false
-                                    webView.value?.reload()
+                                    webView?.reload()
                                 }
                             )
                         }
@@ -124,7 +123,7 @@ fun WebViewPage(route: WebViewRoute) {
                             },
                             onClick = {
                                 expanded = false
-                                copyText(webView.value?.url ?: initUrl)
+                                copyText(webView?.url ?: initUrl)
                             }
                         )
                         DropdownMenuItem(
@@ -133,7 +132,7 @@ fun WebViewPage(route: WebViewRoute) {
                             },
                             onClick = {
                                 expanded = false
-                                openUri(webView.value?.url ?: initUrl)
+                                IntentUtils.openUri(webView?.url ?: initUrl)
                             }
                         )
                     }
@@ -148,7 +147,7 @@ fun WebViewPage(route: WebViewRoute) {
             state = webViewState,
             client = webViewClient,
             onCreated = {
-                webView.value = it
+                webView = it
                 it.addJavascriptInterface(GkdWebViewJsApi, "gkd")
                 it.settings.apply {
                     @SuppressLint("SetJavaScriptEnabled")
@@ -221,7 +220,7 @@ private class GkdWebViewClient() : AccompanistWebViewClient() {
             if (uri.scheme == "gkd") {
                 (view?.context as? MainActivity)?.mainVm?.handleGkdUri(uri)
             } else {
-                openUri(uri)
+                IntentUtils.openUri(uri)
             }
             return true
         }

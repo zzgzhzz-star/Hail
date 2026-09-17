@@ -12,23 +12,19 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import li.gkd.app.app
 import li.gkd.app.appScope
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ScreenUtils
 import li.gkd.app.snapshot.SnapshotCapture
-import li.gkd.app.util.SubscriptionResult
-import li.gkd.app.util.SubscriptionStore
+import li.gkd.app.data.subscription.SubscriptionResult
+import li.gkd.app.data.subscription.SubscriptionRepository
 import li.gkd.app.util.UpdateTimeOption
-import li.gkd.app.util.launchTry
+import li.gkd.app.util.launchLogged
 import li.gkd.app.util.mapState
-import li.gkd.selector.MatchOption
-import li.gkd.selector.QueryContext
+import li.gkd.selector.MatchOptions
 import li.gkd.selector.Selector
-import li.gkd.selector.Transform
-import li.gkd.selector.getBooleanInvoke
-import li.gkd.selector.getCharSequenceAttr
-import li.gkd.selector.getCharSequenceInvoke
-import li.gkd.selector.getIntInvoke
+import li.gkd.selector.SelectorCompileResult
+import li.gkd.selector.NodeAdapter
 
 
 fun onA11yFeatEvent(event: AccessibilityEvent) = event.run {
@@ -48,49 +44,38 @@ private fun AccessibilityEvent.getEventAttr(name: String): Any? = when (name) {
     else -> null
 }
 
-private val a11yEventTransform by lazy {
-    Transform<AccessibilityEvent>(
-        getAttr = { target, name ->
-            when (target) {
-                is QueryContext<*> -> when (name) {
-                    "prev" -> target.prev
-                    "current" -> target.current
-                    else -> (target.current as AccessibilityEvent).getEventAttr(name)
-                }
+private object A11yEventNodeAdapter : NodeAdapter<AccessibilityEvent>() {
+    override fun getAttr(target: Any, name: String): Any? = when (target) {
+        is AccessibilityEvent -> target.getEventAttr(name)
+        is List<*> -> when (name) {
+            "size" -> target.size
+            else -> null
+        }
 
-                is CharSequence -> getCharSequenceAttr(target, name)
-                is AccessibilityEvent -> target.getEventAttr(name)
-                is List<*> -> when (name) {
-                    "size" -> target.size
-                    else -> null
-                }
+        else -> null
+    }
 
-                else -> null
-            }
-        },
-        getInvoke = { target, name, args ->
-            when (target) {
-                is Int -> getIntInvoke(target, name, args)
-                is Boolean -> getBooleanInvoke(target, name, args)
-                is CharSequence -> getCharSequenceInvoke(target, name, args)
-                is List<*> -> when (name) {
-                    "get" -> {
-                        (args.singleOrNull() as? Int)?.let { index ->
-                            target.getOrNull(index)
-                        }
-                    }
+    override fun getInvoke(target: Any, name: String, args: List<Any>): Any? = when (target) {
+        is List<*> -> when (name) {
+            "get" -> (args.singleOrNull() as? Int)?.let(target::getOrNull)
+            else -> null
+        }
 
-                    else -> null
-                }
+        else -> null
+    }
 
-                else -> null
-            }
-        },
-        getName = { it.className },
-        getChildren = { emptySequence() },
-        getParent = { null }
-    )
+    override fun getName(node: AccessibilityEvent): String? = node.className?.toString()
+
+    override fun getChildCount(node: AccessibilityEvent): Int = 0
+
+    override fun getChild(node: AccessibilityEvent, index: Int): AccessibilityEvent? = null
+
+    override fun getParent(node: AccessibilityEvent): AccessibilityEvent? = null
+
+    override fun getNodeKey(node: AccessibilityEvent): Any = node
 }
+
+private val a11yEventAdapter = A11yEventNodeAdapter
 
 context(event: AccessibilityEvent)
 private fun watchCaptureScreenshot() {
@@ -98,14 +83,15 @@ private fun watchCaptureScreenshot() {
     if (SnapshotCapture.isCapturing) return
     if (event.packageName != storeFlow.value.screenshotTargetAppId) return
     if (tempEventSelector.first != storeFlow.value.screenshotEventSelector) {
-        tempEventSelector =
-            storeFlow.value.screenshotEventSelector to Selector.parseOrNull(storeFlow.value.screenshotEventSelector)
+        val result = Selector.compile(storeFlow.value.screenshotEventSelector)
+        tempEventSelector = storeFlow.value.screenshotEventSelector to
+            (result as? SelectorCompileResult.Success)?.value
     }
     val selector = tempEventSelector.second ?: return
-    selector.match(event, a11yEventTransform, MatchOption(fastQuery = false)).let {
+    selector.match(event, a11yEventAdapter, MatchOptions(fastQuery = false)).let {
         if (it == null) return
     }
-    appScope.launchTry {
+    appScope.launchLogged {
         SnapshotCapture.capture()
     }
 }
@@ -121,9 +107,9 @@ private fun watchAutoUpdateSubs() {
         interval.coerceAtLeast(UpdateTimeOption.Everyday.value)
     ) return
     autoRefreshPending = true
-    appScope.launchTry {
+    appScope.launchLogged {
         try {
-            val result = SubscriptionStore.refresh()
+            val result = SubscriptionRepository.refresh()
             if (result !is SubscriptionResult.Busy) {
                 lastUpdateSubsTime = currentTime
             }
@@ -153,7 +139,7 @@ private fun createVolumeReceiver() = object : BroadcastReceiver() {
             val t = System.currentTimeMillis()
             if (t - lastVolumeTriggerTime > 3000 && !ScreenUtils.isScreenLock()) {
                 lastVolumeTriggerTime = t
-                appScope.launchTry {
+                appScope.launchLogged {
                     SnapshotCapture.capture()
                 }
             }
@@ -201,7 +187,7 @@ private val screenStateReceiver = object : BroadcastReceiver() {
         if (isInteractive) {
             val t = System.currentTimeMillis()
             if (t - appChangeTime > 500) { // 37.872(a11y) -> 38.228(onReceive)
-                A11yRuleEngine.onScreenForcedActive()
+                A11yRuntime.onScreenForcedActive()
             }
         }
     }

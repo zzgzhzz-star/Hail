@@ -1,7 +1,7 @@
 package li.gkd.app.data
 
 import kotlinx.serialization.Serializable
-import li.gkd.app.util.appInfoMapFlow
+import li.gkd.app.data.appinfo.AppInfoRepository
 import li.gkd.db.BaseSnapshot
 import li.gkd.db.Snapshot
 
@@ -13,7 +13,7 @@ data class ComplexSnapshot(
     override val screenHeight: Int,
     override val screenWidth: Int,
     override val isLandscape: Boolean,
-    val appInfo: AppInfo? = appInfoMapFlow.value[appId],
+    val appInfo: AppInfo? = AppInfoRepository.appInfoMapFlow.value[appId],
     val gkdAppInfo: AppInfo? = selfAppInfo,
     val device: DeviceInfo = DeviceInfo(),
     val nodes: List<NodeInfo>,

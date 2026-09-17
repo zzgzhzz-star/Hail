@@ -14,14 +14,17 @@ object Db {
         checkNotNull(createDatabase) { "Db is not initialized" }.invoke()
     }
 
+    val subscriptionConfigStore by lazy { SubscriptionConfigStore(database) }
+
     val subsItemDao get() = database.subsItemDao()
-    val subsConfigDao get() = database.subsConfigDao()
+    val subsAppGroupConfigDao get() = database.subsAppGroupConfigDao()
+    val subsGlobalGroupConfigDao get() = database.subsGlobalGroupConfigDao()
     val snapshotDao get() = database.snapshotDao()
     val actionLogDao get() = database.actionLogDao()
-    val categoryConfigDao get() = database.categoryConfigDao()
+    val subsCategoryConfigDao get() = database.subsCategoryConfigDao()
     val activityLogDao get() = database.activityLogDao()
-    val appConfigDao get() = database.appConfigDao()
-    val appVisitLogDao get() = database.appVisitLogDao()
+    val subsAppConfigDao get() = database.subsAppConfigDao()
+    val appLastVisitDao get() = database.appLastVisitDao()
     val a11yEventLogDao get() = database.a11yEventLogDao()
 
     suspend fun <T> withTransaction(block: suspend () -> T): T =

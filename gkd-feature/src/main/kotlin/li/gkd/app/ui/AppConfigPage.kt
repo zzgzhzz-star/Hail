@@ -10,12 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,43 +32,44 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
-import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.Serializable
-import li.gkd.db.ActionLog
+import li.gkd.app.core.state.Loadable
 import li.gkd.app.data.RawSubscription
-import li.gkd.app.store.storeFlow
-import li.gkd.app.ui.component.AnimatedBooleanContent
+import li.gkd.app.domain.rule.RuleGroupTarget
+import li.gkd.app.domain.rule.toRuleGroupTarget
+import li.gkd.app.feature.log.ActionLogRoute
+import li.gkd.app.feature.subscription.SubsAppGroupListRoute
+import li.gkd.app.feature.subscription.UpsertRuleGroupRoute
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.ui.component.AnimationFloatingActionButton
 import li.gkd.app.ui.component.AppNameText
-import li.gkd.app.ui.component.BatchActionButtonGroup
+import li.gkd.app.ui.component.BatchActionMenuItem
 import li.gkd.app.ui.component.EmptyText
 import li.gkd.app.ui.component.MenuGroupCard
 import li.gkd.app.ui.component.MenuItemCheckbox
 import li.gkd.app.ui.component.MenuItemRadioButton
+import li.gkd.app.ui.component.MultiSelectionActions
+import li.gkd.app.ui.component.MultiSelectionTopAppBar
 import li.gkd.app.ui.component.PerfIcon
 import li.gkd.app.ui.component.PerfIconButton
-import li.gkd.app.ui.component.PerfTopAppBar
+import li.gkd.app.ui.component.RuleBatchMenuItems
 import li.gkd.app.ui.component.RuleGroupCard
-import li.gkd.app.ui.component.ShowGroupState
 import li.gkd.app.ui.component.animateListItem
-import li.gkd.app.ui.component.rememberMultiSelectionState
-import li.gkd.app.ui.component.toGroupState
 import li.gkd.app.ui.component.rememberListScrollState
-import li.gkd.app.ui.icon.BackCloseIcon
+import li.gkd.app.ui.component.rememberMultiSelectionState
 import li.gkd.app.ui.share.ListPlaceholder
-import li.gkd.app.ui.share.Loadable
 import li.gkd.app.ui.share.LocalMainViewModel
-import li.gkd.app.ui.share.noRippleClickable
+import li.gkd.app.ui.share.launchUi
 import li.gkd.app.ui.style.EmptyHeight
 import li.gkd.app.ui.style.iconTextSize
 import li.gkd.app.ui.style.scaffoldPadding
-import li.gkd.db.LOCAL_SUBS_ID
 import li.gkd.app.util.RuleSortOption
-import li.gkd.app.util.copyText
+import li.gkd.app.util.ToastUtils.copyText
+import li.gkd.app.util.ToastUtils.toast
 import li.gkd.app.util.findOption
-import li.gkd.app.util.launchTry
 import li.gkd.app.util.throttle
-import li.gkd.app.util.toast
+import li.gkd.db.ActionLog
+import li.gkd.db.LOCAL_SUBS_ID
 
 @Serializable
 data class AppConfigRoute(
@@ -86,6 +84,7 @@ fun AppConfigPage(route: AppConfigRoute) {
     val mainVm = LocalMainViewModel.current
     val vm = viewModel { AppConfigVm(route) }
     val scope = vm.scope
+    val batchBusy by vm.batchBusyFlow.collectAsStateWithLifecycle()
 
     val store by storeFlow.collectAsStateWithLifecycle()
     val loadableState by vm.uiState.collectAsStateWithLifecycle()
@@ -101,36 +100,37 @@ fun AppConfigPage(route: AppConfigRoute) {
 
     val allGroupStates = remember(subsPairs, appId) {
         subsPairs.flatMap { (entry, groups) ->
-            groups.map { group -> group.toGroupState(entry.subsItem.id, appId) }
+            groups.map { group -> group.toRuleGroupTarget(entry.subsItem.id, appId) }
         }.toSet()
     }
-    val selectionState = rememberMultiSelectionState<ShowGroupState>()
-    val selectedDataSet = selectionState.selectedKeys
+    val selectionState = rememberMultiSelectionState<RuleGroupTarget>()
+    val selectedDataSet = selectionState.selectedKeys intersect allGroupStates
     val isSelectedMode = selectionState.active
-    LaunchedEffect(allGroupStates) {
-        selectionState.retain(allGroupStates)
+    LaunchedEffect(allGroupStates, loadableState) {
+        if (loadableState is Loadable.Ready) selectionState.retain(allGroupStates)
     }
     BackHandler(isSelectedMode) {
         selectionState.clear()
     }
 
     val updateSelected: (Boolean?) -> Unit = { enabled ->
-        scope.launchTry {
-            val action = when (enabled) {
-                false -> "关闭"
-                true -> "启用"
-                null -> "重置开关至默认值"
-            }
-            if (!mainVm.dialogRequests.confirm(
-                title = "操作提示",
-                text = "是否将所选规则全部${action}?\n\n注: 也可在「订阅-规则类别」操作",
-            )) return@launchTry
-            val changedSize = vm.updateSelectedEnabled(selectedDataSet, enabled)
-            if (changedSize > 0) {
-                val result = if (enabled == null) "重置" else if (enabled) "已启用" else "已关闭"
-                toast("$result $changedSize 规则")
-            } else {
-                toast(if (enabled == null) "无可重置规则" else "无规则被改变")
+        val targets = selectedDataSet
+        if (targets.isNotEmpty()) {
+            scope.launchUi {
+                vm.runBatchAction {
+                    val action = when (enabled) {
+                        false -> "关闭"
+                        true -> "启用"
+                        null -> "重置开关至默认值"
+                    }
+                    if (!mainVm.dialogRequests.confirm(
+                        title = "操作提示",
+                        text = "是否将所选 ${targets.size} 个规则组全部${action}?\n\n全局规则仅调整在当前应用的开关。\n也可在「订阅-规则类别」操作。",
+                    )) return@runBatchAction
+                    val changedSize = vm.updateSelectedEnabled(targets, enabled)
+                    val result = if (enabled == null) "已重置" else if (enabled) "已启用" else "已关闭"
+                    toast(if (changedSize > 0) "$result $changedSize 个规则组" else "无规则被改变，所选规则可能已变化")
+                }
             }
         }
     }
@@ -166,106 +166,68 @@ fun AppConfigPage(route: AppConfigRoute) {
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            PerfTopAppBar(scrollBehavior = scrollBehavior, navigationIcon = {
-                IconButton(onClick = throttle {
-                    if (isSelectedMode) {
-                        selectionState.clear()
-                    } else {
-                        mainVm.popPage()
-                    }
-                }) {
-                    BackCloseIcon(backOrClose = !isSelectedMode)
-                }
-            }, title = {
-                val titleModifier = Modifier.noRippleClickable {
-                    pageScrollState.resetScroll()
-                }
-                if (isSelectedMode) {
-                    Text(
-                        modifier = titleModifier,
-                        text = if (selectedDataSet.isNotEmpty()) selectedDataSet.size.toString() else "",
-                    )
-                } else {
-                    AppNameText(
-                        modifier = titleModifier,
-                        appId = appId
-                    )
-                }
-            }, actions = {
-                var expanded by remember { mutableStateOf(false) }
-                AnimatedBooleanContent(
-                    targetState = isSelectedMode,
-                    contentAlignment = Alignment.TopEnd,
-                    contentTrue = {
-                        Row {
-                            PerfIconButton(
-                                imageVector = PerfIcon.ContentCopy,
-                                enabled = selectedDataSet.any { a -> a.appId != null },
-                                onClick = throttle {
-                                    scope.launchTry {
-                                        copyText(vm.buildSelectedGroupsText(selectedDataSet))
+            MultiSelectionTopAppBar(
+                selectedMode = isSelectedMode,
+                selectedCount = selectedDataSet.size,
+                onExitSelection = selectionState::clear,
+                scrollBehavior = scrollBehavior,
+                onNavigateBack = { mainVm.popPage() },
+                onTitleClick = pageScrollState::resetScroll,
+                title = {
+                    AppNameText(appId = appId)
+                },
+                actions = { selectedMode ->
+                    if (selectedMode) {
+                        MultiSelectionActions(
+                            selectionState = selectionState,
+                            keys = allGroupStates,
+                            enabled = isSelectedMode && !batchBusy && loadableState is Loadable.Ready,
+                        ) { dismiss ->
+                            BatchActionMenuItem(
+                                text = "复制规则",
+                                enabled = selectedDataSet.any { it is RuleGroupTarget.App },
+                                onDismiss = dismiss,
+                                onClick = {
+                                    val targets = selectedDataSet.filterIsInstance<RuleGroupTarget.App>().toSet()
+                                    scope.launchUi {
+                                        vm.runBatchAction {
+                                            copyText(vm.buildSelectedGroupsText(targets))
+                                        }
                                     }
                                 },
                             )
-                            BatchActionButtonGroup(
-                                onDisable = { updateSelected(false) },
-                                onEnable = { updateSelected(true) },
-                                onReset = { updateSelected(null) },
+                            RuleBatchMenuItems(
+                                enabled = true,
+                                onDismiss = dismiss,
+                                onUpdate = updateSelected,
                             )
-                            PerfIconButton(imageVector = PerfIcon.MoreVert, onClick = {
-                                expanded = true
-                            })
                         }
-                    },
-                    contentFalse = {
-                        Row {
-                            PerfIconButton(imageVector = PerfIcon.History, onClick = throttle {
+                    } else {
+                        var expanded by remember { mutableStateOf(false) }
+                        PerfIconButton(
+                            enabled = !isSelectedMode,
+                            imageVector = PerfIcon.History,
+                            onClick = throttle {
                                 mainVm.navigatePage(ActionLogRoute(appId = appId))
-                            })
-                            PerfIconButton(imageVector = PerfIcon.Sort, onClick = {
-                                expanded = true
-                            })
-                        }
-                    },
-                )
-                Box(
-                    modifier = Modifier.wrapContentSize(Alignment.TopStart)
-                ) {
-                    key(isSelectedMode) {
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
-                            if (isSelectedMode) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(text = "全选")
-                                    },
-                                    onClick = {
-                                        expanded = false
-                                        selectionState.selectAll(allGroupStates)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(text = "反选")
-                                    },
-                                    onClick = {
-                                        expanded = false
-                                        selectionState.invert(allGroupStates)
-                                    }
-                                )
-                            } else {
+                            },
+                        )
+                        Box {
+                            PerfIconButton(
+                                enabled = !isSelectedMode,
+                                imageVector = PerfIcon.Sort,
+                                onClick = { expanded = true },
+                            )
+                            DropdownMenu(
+                                expanded = expanded && !isSelectedMode,
+                                onDismissRequest = { expanded = false },
+                            ) {
                                 MenuGroupCard(inTop = true, title = "排序") {
-                                    val handleItem: (RuleSortOption) -> Unit =
-                                        throttle(vm::setRuleSortType)
-                                    RuleSortOption.objects.forEach { s ->
+                                    val handleItem: (RuleSortOption) -> Unit = throttle(vm::setRuleSortType)
+                                    RuleSortOption.objects.forEach { option ->
                                         MenuItemRadioButton(
-                                            text = s.label,
-                                            selected = RuleSortOption.objects.findOption(store.appRuleSort) == s,
-                                            onClick = {
-                                                handleItem(s)
-                                            },
+                                            text = option.label,
+                                            selected = RuleSortOption.objects.findOption(store.appRuleSort) == option,
+                                            onClick = { handleItem(option) },
                                         )
                                     }
                                 }
@@ -279,8 +241,8 @@ fun AppConfigPage(route: AppConfigRoute) {
                             }
                         }
                     }
-                }
-            })
+                },
+            )
         },
         floatingActionButton = {
             AnimationFloatingActionButton(
@@ -359,9 +321,9 @@ fun AppConfigPage(route: AppConfigRoute) {
                         it.subsId == subsId && it.groupType == group.groupType && it.groupKey == group.key
                     }
                     val onLongClick = {
-                        if (groupSize > 1 && !isSelectedMode) {
-                            selectionState.selectOnly(
-                                group.toGroupState(
+                        if (!batchBusy) {
+                            selectionState.select(
+                                group.toRuleGroupTarget(
                                     subsId = subsId,
                                     appId = appId,
                                 ),
@@ -370,7 +332,7 @@ fun AppConfigPage(route: AppConfigRoute) {
                     }
                     val onSelectedChange = {
                         selectionState.toggle(
-                            group.toGroupState(
+                            group.toRuleGroupTarget(
                                 subsId = subsId,
                                 appId = appId,
                             )
@@ -391,12 +353,13 @@ fun AppConfigPage(route: AppConfigRoute) {
                             )
                         },
                         onCheckedChange = { enabled ->
-                            scope.launchTry(Dispatchers.Default) {
-                                vm.setGroupEnabled(entry.subscription, group, subsConfig, enabled)
+                            scope.launchUi {
+                                vm.setGroupEnabled(entry.subscription, group, enabled)
                             }
                         },
                         onLongClick = onLongClick,
                         isSelectedMode = isSelectedMode,
+                        selectionEnabled = !batchBusy,
                         isSelected = isSelected,
                         onSelectedChange = onSelectedChange,
                         focusGroup = focusGroup,

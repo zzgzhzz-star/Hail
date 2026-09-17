@@ -22,13 +22,22 @@ abstract class EntryActivity : Activity() {
     protected open fun prepareIntent() {}
 
     private fun navToMainActivity() {
-        if (intent != null) {
-            val navIntent = Intent(intent)
+        intent?.let { sourceIntent ->
+            val navIntent = Intent(sourceIntent)
             navIntent.component = MainActivity::class.componentName
-            navIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            // 保留已有 MainActivity 及其 ViewModel，由 onNewIntent 处理入口参数。
+            // 只转发 URI 授权，避免外部任务栈 flags 改变 MainActivity 的启动行为。
+            navIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or sourceIntent.uriPermissionFlags()
             navIntent.putExtra(activityNavSourceName, this::class.jvmName)
             startActivity(navIntent)
         }
         finish()
     }
 }
+
+private fun Intent.uriPermissionFlags() = flags and (
+    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+    )

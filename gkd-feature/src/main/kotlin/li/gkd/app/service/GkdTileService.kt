@@ -4,53 +4,56 @@ import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import li.gkd.app.META
 import li.gkd.app.a11y.systemRecentCn
-import li.gkd.app.a11y.topActivityFlow
-import li.gkd.app.ui.app.accessRestrictedSettingsShowFlow
+import li.gkd.app.a11y.currentTopActivity
+import li.gkd.app.ui.app.showAccessRestrictedSettingsDialog
 import li.gkd.app.app
 import li.gkd.app.appScope
-import li.gkd.app.isActivityVisible
 import li.gkd.app.permission.PermissionStates
+import li.gkd.app.platform.lifecycle.MainActivityVisibility
 import li.gkd.app.priv.AutomationService
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.priv.uiAutomationFlow
-import li.gkd.app.store.actualA11yScopeAppList
-import li.gkd.app.store.actualBlockA11yAppList
-import li.gkd.app.store.storeFlow
-import li.gkd.app.util.launchTry
+import li.gkd.app.store.AppStore.actualA11yScopeAppList
+import li.gkd.app.store.AppStore.actualBlockA11yAppList
+import li.gkd.app.store.AppStore.storeFlow
+import li.gkd.app.ui.share.launchUi
 import li.gkd.app.util.mapState
 import li.gkd.app.util.runMainPost
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
+import li.songe.codeorigin.CallSite
 import kotlin.time.Duration.Companion.milliseconds
 
 class GkdTileService : BaseTileService() {
     override val activeFlow = combine(A11yService.isRunning, uiAutomationFlow) { a11y, automator ->
         a11y || automator != null
-    }.stateIn(scope, SharingStarted.Eagerly, false)
-
-    init {
-        onTileClicked { switchAutomatorService() }
     }
+
+    override fun onTileClick() = switchAutomatorService()
 }
 
 private val modifyA11yMutex = Mutex()
 private const val A11Y_AWAIT_START_TIME = 2000L
 private const val A11Y_AWAIT_FIX_TIME = 1000L
 
-private fun modifyA11yRun(block: suspend () -> Unit) {
-    if (modifyA11yMutex.isLocked) return
-    appScope.launchTry(Dispatchers.IO) {
-        if (modifyA11yMutex.isLocked) return@launchTry
-        modifyA11yMutex.withLock { block() }
+private fun modifyA11yRun(
+    @CallSite loc: String = "",
+    block: suspend () -> Unit,
+) {
+    appScope.launchUi(Dispatchers.IO, loc = loc) {
+        if (!modifyA11yMutex.tryLock()) return@launchUi
+        try {
+            block()
+        } finally {
+            modifyA11yMutex.unlock()
+        }
     }
 }
 
@@ -77,7 +80,7 @@ private suspend fun switchA11yService() {
         // https://github.com/orgs/gkd-kit/discussions/799
         if (!A11yService.isRunning.value) {
             toast("开启无障碍失败")
-            accessRestrictedSettingsShowFlow.value = true
+            showAccessRestrictedSettingsDialog()
             return
         }
     }
@@ -91,7 +94,7 @@ private fun switchAutomationService() {
     }
 }
 
-fun switchAutomatorService() = modifyA11yRun {
+fun switchAutomatorService(@CallSite loc: String = "") = modifyA11yRun(loc = loc) {
     if (currentAppUseA11y) {
         switchA11yService()
     } else {
@@ -101,7 +104,7 @@ fun switchAutomatorService() = modifyA11yRun {
 
 private fun skipBlockApp(): Boolean {
     if (storeFlow.value.enableBlockA11yAppList) {
-        val topAppId = if (isActivityVisible || app.justStarted) {
+        val topAppId = if (MainActivityVisibility.isVisible || app.justStarted) {
             META.appId
         } else {
             privilegeContextFlow.value?.run { topCpn()?.packageName }
@@ -131,7 +134,7 @@ private suspend fun fixA11yService() {
         delay(A11Y_AWAIT_START_TIME.milliseconds)
         if (currentAppUseA11y && !A11yService.isRunning.value) {
             toast("重启无障碍失败")
-            accessRestrictedSettingsShowFlow.value = true
+            showAccessRestrictedSettingsDialog()
         }
     }
 }
@@ -144,7 +147,7 @@ private fun fixAutomationService() {
     }
 }
 
-fun fixRestartAutomatorService() = modifyA11yRun {
+fun fixRestartAutomatorService(@CallSite loc: String = "") = modifyA11yRun(loc = loc) {
     if (storeFlow.value.enableAutomator) {
         if (currentAppUseA11y) {
             fixA11yService()
@@ -184,7 +187,10 @@ private fun innerForcedUpdateA11yService(disabled: Boolean) {
     }
 }
 
-private fun forcedUpdateA11yService(disabled: Boolean) = modifyA11yRun {
+private fun forcedUpdateA11yService(
+    disabled: Boolean,
+    @CallSite loc: String = "",
+) = modifyA11yRun(loc = loc) {
     innerForcedUpdateA11yService(disabled)
 }
 
@@ -192,7 +198,8 @@ const val A11Y_WHITE_APP_AWAIT_TIME = 3000L
 
 @Volatile
 private var lastAppIdChangeTime = 0L
-val topAppIdFlow = MutableStateFlow("")
+val topAppIdFlow: StateFlow<String>
+    field = MutableStateFlow("")
 val a11yPartDisabledFlow by lazy {
     topAppIdFlow.mapState(appScope) {
         actualBlockA11yAppList.contains(it)
@@ -211,7 +218,7 @@ fun initA11yWhiteAppList() {
         actualFlow.collect {
             lastAppIdChangeTime = System.currentTimeMillis()
             if (!currentAppBlocked) {
-                if (topActivityFlow.value.sameAs(systemRecentCn) && currentAppUseA11y) {
+                if (currentTopActivity.sameAs(systemRecentCn) && currentAppUseA11y) {
                     // 切换无障碍会造成卡顿，在最近任务界面时，延迟这个卡顿
                     val tempTime = lastAppIdChangeTime
                     runMainPost(A11Y_WHITE_APP_AWAIT_TIME) {

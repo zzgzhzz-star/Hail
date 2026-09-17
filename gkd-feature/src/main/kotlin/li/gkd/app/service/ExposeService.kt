@@ -6,19 +6,19 @@ import android.os.Binder
 import li.gkd.app.app
 import li.gkd.app.appScope
 import li.gkd.app.notif.NotificationCatalog
-import li.gkd.app.syncFixState
+import li.gkd.app.platform.lifecycle.RuntimeStateSynchronizer
 import li.gkd.app.util.LogUtils
 import li.gkd.app.snapshot.SnapshotCapture
+import li.gkd.app.ui.share.launchUi
 import li.gkd.app.util.componentName
-import li.gkd.app.util.launchTry
 import li.gkd.app.util.runMainPost
-import li.gkd.app.util.shFolder
-import li.gkd.app.util.toast
+import li.gkd.app.util.FolderUtils
+import li.gkd.app.util.ToastUtils.toast
 
 class ExposeService : Service() {
     override fun onBind(intent: Intent?): Binder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        appScope.launchTry {
+        appScope.launchUi {
             try {
                 handleIntent(intent)
             } finally {
@@ -37,7 +37,7 @@ class ExposeService : Service() {
             0 -> SnapshotCapture.capture()
             1 -> {
                 toast("执行成功", forced = true)
-                syncFixState()
+                RuntimeStateSynchronizer.requestSync()
             }
 
             else -> {
@@ -55,7 +55,7 @@ class ExposeService : Service() {
         fun initCommandFile() {
             val commandText = template
                 .replace("{service}", ExposeService::class.componentName.flattenToShortString())
-            shFolder.resolve("expose.sh").writeText(commandText)
+            FolderUtils.shFolder.resolve("expose.sh").writeText(commandText)
         }
 
         fun exposeIntent(expose: Int, data: String? = null): Intent {

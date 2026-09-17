@@ -10,7 +10,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import li.gkd.app.ui.share.LocalMainViewModel
-import li.gkd.app.util.launchAsFn
+import li.gkd.app.ui.share.launchUiAction
 import li.gkd.app.util.throttle
 
 @Composable
@@ -20,7 +20,7 @@ fun InnerDisableSwitch(
     isSelectedMode: Boolean = false,
 ) {
     val mainVm = LocalMainViewModel.current
-    val onClick = mainVm.scope.launchAsFn {
+    val onClick = mainVm.scope.launchUiAction {
         mainVm.dialogRequests.showMessage(
             title = if (valid) "内置禁用" else "非法规则",
             text = if (valid) {

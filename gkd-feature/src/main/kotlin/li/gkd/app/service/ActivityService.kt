@@ -26,28 +26,28 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import li.gkd.app.MainViewModel
+import li.gkd.app.a11y.A11yState
 import li.gkd.app.a11y.ActivityScene
 import li.gkd.app.a11y.topActivityFlow
+import li.gkd.app.a11y.currentTopActivity
 import li.gkd.app.a11y.updateTopActivity
 import li.gkd.app.notif.NotificationCatalog
-import li.gkd.app.notif.StopServiceReceiver
 import li.gkd.app.permission.PermissionStates
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.ui.component.PerfIcon
 import li.gkd.app.ui.style.iconTextSize
-import li.gkd.app.util.copyText
-import li.gkd.app.util.startForegroundServiceByClass
-import li.gkd.app.util.stopServiceByClass
+import li.gkd.app.util.ToastUtils.copyText
+import li.gkd.app.util.IntentUtils
 
 
 class ActivityService : OverlayWindowService(
     positionKey = "activity"
 ) {
-    val activityOkFlow by lazy {
+    private val activityOkFlow by lazy {
         combine(A11yService.isRunning, privilegeContextFlow) { a, b ->
             a || b != null
         }.stateIn(scope = lifecycleScope, started = SharingStarted.Eagerly, initialValue = false)
@@ -64,7 +64,7 @@ class ActivityService : OverlayWindowService(
                 .padding(4.dp)
         ) {
             CompositionLocalProvider(LocalContentColor provides contentColorFor(bgColor)) {
-                val topActivity by topActivityFlow.collectAsStateWithLifecycle()
+                val topActivity by topActivityFlow.collectAsStateWithLifecycle(initialValue = currentTopActivity)
                 val hasAuth by activityOkFlow.collectAsStateWithLifecycle()
                 ClosableTitle(
                     title = if (hasAuth) "记录服务" else "记录服务(无权限)"
@@ -100,20 +100,19 @@ class ActivityService : OverlayWindowService(
 
     init {
         useLogLifecycle()
-        useAliveFlow(isRunning)
-        useAliveToast("记录服务")
-        StopServiceReceiver.autoRegister()
+        useServicePresence(
+            stateFlow = isRunning,
+            name = "记录服务",
+        )
         onCreated {
             NotificationCatalog.activity().startForeground()
-        }
-        onCreated {
             lifecycleScope.launch {
                 topActivityFlow.collect {
                     NotificationCatalog.activity(text = it.format()).startForeground()
                 }
             }
             if (!A11yService.isRunning.value) {
-                synchronized(topActivityFlow) {
+                A11yState.withTopActivityLock {
                     privilegeContextFlow.value?.run {
                         topCpn()?.let { cpn ->
                             updateTopActivity(
@@ -129,27 +128,15 @@ class ActivityService : OverlayWindowService(
     }
 
     companion object {
-        val isRunning = MutableStateFlow(false)
+        val isRunning: StateFlow<Boolean>
+            field = MutableStateFlow(false)
         fun start() {
             if (!PermissionStates.drawOverlays.checkOrToast()) return
-            startForegroundServiceByClass(ActivityService::class)
+            IntentUtils.startForegroundServiceByClass(ActivityService::class)
         }
 
-        fun stop() = stopServiceByClass(ActivityService::class)
+        fun stop() = IntentUtils.stopServiceByClass(ActivityService::class)
 
-        suspend fun setEnabled(mainVm: MainViewModel, enabled: Boolean) {
-            if (!enabled) {
-                stop()
-                return
-            }
-            if (!mainVm.permissionRequests.ensurePermissions(
-                    PermissionStates.foregroundServiceSpecialUse,
-                    PermissionStates.notification,
-                    PermissionStates.drawOverlays,
-                )
-            ) return
-            start()
-        }
     }
 }
 

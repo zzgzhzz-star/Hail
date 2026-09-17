@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,13 +49,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import li.gkd.app.MainActivity
 import li.gkd.app.R
+import li.gkd.app.data.subscription.SubscriptionState
 import li.gkd.app.permission.PermissionStates
+import li.gkd.app.platform.service.ServiceController
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.service.StatusService
 import li.gkd.app.service.TrackService
-import li.gkd.app.store.storeFlow
-import li.gkd.app.ui.AboutRoute
-import li.gkd.app.ui.AdvancedPageRoute
+import li.gkd.app.store.AppStore.storeFlow
+import li.gkd.app.store.AppStore.actionCountFlow
+import li.gkd.app.feature.settings.AboutRoute
+import li.gkd.app.feature.settings.AdvancedPageRoute
 import li.gkd.app.ui.BlockA11yAppListRoute
 import li.gkd.app.ui.PrivilegeServiceRoute
 import li.gkd.app.ui.component.CustomOutlinedTextField
@@ -79,10 +83,11 @@ import li.gkd.app.ui.style.titleItemPadding
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.DarkThemeOption
 import li.gkd.app.util.findOption
-import li.gkd.app.util.launchTry
-import li.gkd.app.util.openAppDetailsSettings
+import li.gkd.app.ui.share.launchUi
+import li.gkd.app.util.IntentUtils
+import li.gkd.app.ui.share.statusText
 import li.gkd.app.util.throttle
-import li.gkd.app.util.toast
+import li.gkd.app.util.ToastUtils.toast
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val ZIP_MIME_TYPE = "application/zip"
@@ -92,29 +97,31 @@ fun useSettingsPage(): ScaffoldExt {
     val mainVm = LocalMainViewModel.current
     val context = LocalActivity.current as MainActivity
     val vm = viewModel<SettingsVm>()
-    val subsStatus by vm.subsStatusFlow.collectAsStateWithLifecycle()
+    val ruleSummary by SubscriptionState.ruleSummaryFlow.collectAsStateWithLifecycle()
+    val actionCount by actionCountFlow.collectAsStateWithLifecycle()
+    val subsStatus = ruleSummary.statusText(actionCount)
     val trackServiceRunning by TrackService.isRunning.collectAsStateWithLifecycle()
     val privilegeAvailable = privilegeContextFlow.collectAsStateWithLifecycle().value != null
     val store by storeFlow.collectAsStateWithLifecycle()
     val actionScope = vm.scope
-    val showToastInputDlg by vm.showActionToastDialogFlow.collectAsStateWithLifecycle()
-    val showNotifTextInputDlg by vm.showNotificationTextDialogFlow.collectAsStateWithLifecycle()
-    val showA11yBlockDlg by vm.showA11yBlockDialogFlow.collectAsStateWithLifecycle()
-    val showBackupDialog by vm.showBackupDialogFlow.collectAsStateWithLifecycle()
-    val showExportBackupDialog by vm.showExportBackupDialogFlow.collectAsStateWithLifecycle()
-    val showToastSettingsDialog by vm.toastSettingsDialogVisibleFlow.collectAsStateWithLifecycle()
+    var showToastInputDlg by rememberSaveable { mutableStateOf(false) }
+    var showNotifTextInputDlg by rememberSaveable { mutableStateOf(false) }
+    var showA11yBlockDlg by rememberSaveable { mutableStateOf(false) }
+    var showBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showExportBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showToastSettingsDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showToastSettingsDialog) {
         SettingsDialog(
             title = "提示设置",
-            onDismissRequest = { vm.setToastSettingsDialogVisible(false) },
+            onDismissRequest = { showToastSettingsDialog = false },
         ) {
             TextSwitch(
                 title = "提示样式",
                 subtitle = "使用系统样式",
                 suffix = "查看限制",
                 onSuffixClick = {
-                    actionScope.launchTry {
+                    actionScope.launchUi {
                         mainVm.dialogRequests.showMessage(
                             title = "限制说明",
                             text = "系统 Toast 存在频率限制, 触发过于频繁会被系统强制不显示\n\n如果只使用开屏一类低频率规则可使用系统提示, 否则建议关闭此项使用自定义样式提示",
@@ -129,13 +136,13 @@ fun useSettingsPage(): ScaffoldExt {
                 subtitle = "显示触发位置信息",
                 checked = trackServiceRunning,
                 onCheckedChange = { enabled ->
-                    actionScope.launchTry {
+                    actionScope.launchUi {
                         if (enabled) {
                             if (!mainVm.dialogRequests.confirm(
                                 title = "使用须知",
                                 text = "开启「轨迹提示」后点击或滑动后会在屏幕上使用悬浮窗绘制轨迹(一段时间后消失)，如果新触摸事件恰好在悬浮窗区域内，可能会被目标应用拒绝，从而导致点击或滑动无响应",
                                 confirmText = "继续",
-                            )) return@launchTry
+                            )) return@launchUi
                             if (
                                 !mainVm.permissionRequests.ensurePermissions(
                                     PermissionStates.foregroundServiceSpecialUse,
@@ -143,7 +150,7 @@ fun useSettingsPage(): ScaffoldExt {
                                     PermissionStates.drawOverlays,
                                 )
                             ) {
-                                return@launchTry
+                                return@launchUi
                             }
                         }
                         vm.setTrackServiceEnabled(enabled)
@@ -172,7 +179,7 @@ fun useSettingsPage(): ScaffoldExt {
                         contentDescription = "文案规则",
                         onClickLabel = "打开文案规则弹窗",
                         onClick = throttle {
-                            actionScope.launchTry {
+                            actionScope.launchUi {
                                 mainVm.dialogRequests.showMessage(
                                     title = "文案规则",
                                     text = $$"触发文案支持变量替换，规则如下\n${1} 子规则名称\n${2} 规则名称\n${3} 触发次数\n\n示例模板\n${1}/${2}/${3}\n\n替换结果\n子规则a/规则A/3",
@@ -203,19 +210,19 @@ fun useSettingsPage(): ScaffoldExt {
                         .autoFocus()
                 )
             },
-            onDismissRequest = { vm.setActionToastDialogVisible(false) },
+            onDismissRequest = { showToastInputDlg = false },
             confirmButton = {
                 TextButton(enabled = value.isNotEmpty(), onClick = {
                     if (vm.saveActionToast(value)) {
                         toast("更新成功")
                     }
-                    vm.setActionToastDialogVisible(false)
+                    showToastInputDlg = false
                 }) {
                     Text(text = "确认")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { vm.setActionToastDialogVisible(false) }) {
+                TextButton(onClick = { showToastInputDlg = false }) {
                     Text(text = "取消")
                 }
             }
@@ -239,7 +246,7 @@ fun useSettingsPage(): ScaffoldExt {
                         contentDescription = "文案规则",
                         onClickLabel = "打开文案规则弹窗",
                         onClick = throttle {
-                            actionScope.launchTry {
+                            actionScope.launchUi {
                                 mainVm.dialogRequests.showMessage(
                                     title = "文案规则",
                                     text = $$"通知文案支持变量替换，规则如下\n${i} 全局规则数\n${k} 应用数\n${u} 应用规则数\n${n} 触发次数\n\n示例模板\n${i}全局/${k}应用/${u}规则/${n}触发\n\n替换结果\n0全局/1应用/2规则/3触发",
@@ -298,7 +305,7 @@ fun useSettingsPage(): ScaffoldExt {
                 }
             },
             onDismissRequest = {
-                vm.setNotificationTextDialogVisible(false)
+                showNotifTextInputDlg = false
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -306,7 +313,7 @@ fun useSettingsPage(): ScaffoldExt {
                     if (vm.saveNotificationText(titleValue, textValue)) {
                         toast("更新成功")
                     }
-                    vm.setNotificationTextDialogVisible(false)
+                    showNotifTextInputDlg = false
                 }) {
                     Text(
                         text = "确认",
@@ -314,7 +321,7 @@ fun useSettingsPage(): ScaffoldExt {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { vm.setNotificationTextDialogVisible(false) }) {
+                TextButton(onClick = { showNotifTextInputDlg = false }) {
                     Text(
                         text = "取消",
                     )
@@ -325,41 +332,41 @@ fun useSettingsPage(): ScaffoldExt {
 
     if (showA11yBlockDlg) {
         BlockA11yDialog(
-            onDismissRequest = { vm.setA11yBlockDialogVisible(false) },
+            onDismissRequest = { showA11yBlockDlg = false },
         )
     }
     if (showBackupDialog) {
         TextListDialog(
-            onDismiss = { vm.setBackupDialogVisible(false) },
+            onDismiss = { showBackupDialog = false },
             textList = listOf(
                 "导入备份" to {
-                    actionScope.launchTry {
+                    actionScope.launchUi {
                         val uri = mainVm.activityResults.openDocument(ZIP_MIME_TYPE)
                         if (uri == null) {
                             toast("未选择文件")
-                            return@launchTry
+                            return@launchUi
                         }
                         vm.importBackup(uri)
                     }
                 },
                 "导出备份" to {
-                    vm.setExportBackupDialogVisible(true)
+                    showExportBackupDialog = true
                 },
             )
         )
     }
     if (showExportBackupDialog) {
         TextListDialog(
-            onDismiss = { vm.setExportBackupDialogVisible(false) },
+            onDismiss = { showExportBackupDialog = false },
             textList = listOf(
                 "分享到其他应用" to {
-                    actionScope.launchTry {
+                    actionScope.launchUi {
                         val file = vm.exportBackup()
                         context.shareFile(file, "分享备份文件")
                     }
                 },
                 "保存到下载" to {
-                    actionScope.launchTry {
+                    actionScope.launchUi {
                         val file = vm.exportBackup()
                         context.saveFileToDownloads(file)
                     }
@@ -404,14 +411,14 @@ fun useSettingsPage(): ScaffoldExt {
                 checked = store.toastWhenClick,
                 onClickLabel = "打开触发提示弹窗",
                 onClick = {
-                    vm.setActionToastDialogVisible(true)
+                    showToastInputDlg = true
                 },
                 suffixIcon = {
                     PerfCustomIconButton(
                         size = 32.dp,
                         iconSize = 20.dp,
                         onClickLabel = "打开提示设置弹窗",
-                        onClick = { vm.setToastSettingsDialogVisible(true) },
+                        onClick = { showToastSettingsDialog = true },
                         id = R.drawable.ic_page_info,
                         contentDescription = "提示设置",
                         tint = if (showToastSettingsDialog) MaterialTheme.colorScheme.primary else LocalContentColor.current,
@@ -430,7 +437,7 @@ fun useSettingsPage(): ScaffoldExt {
                 },
                 checked = store.useCustomNotifText,
                 onClickLabel = "打开修改通知文案弹窗",
-                onClick = { vm.setNotificationTextDialogVisible(true) },
+                onClick = { showNotifTextInputDlg = true },
                 onCheckedChange = {
                     vm.setUseCustomNotificationText(it)
                 })
@@ -440,13 +447,13 @@ fun useSettingsPage(): ScaffoldExt {
                 subtitle = "在「最近任务」隐藏卡片",
                 checked = store.excludeFromRecents,
                 onCheckedChange = { enabled ->
-                    actionScope.launchTry {
+                    actionScope.launchUi {
                         if (enabled) {
                             if (!mainVm.dialogRequests.confirm(
                                 title = "后台隐藏",
                                 text = "隐藏卡片后可能导致部分设备无法给任务卡片加锁后台，建议先加锁后再隐藏，若已加锁或没有锁后台机制请继续",
                                 confirmText = "继续",
-                            )) return@launchTry
+                            )) return@launchUi
                         }
                         vm.setExcludeFromRecents(enabled)
                     }
@@ -477,7 +484,7 @@ fun useSettingsPage(): ScaffoldExt {
                     if (it && !privilegeAvailable) {
                         mainVm.navigatePage(PrivilegeServiceRoute)
                     } else if (it) {
-                        vm.setA11yBlockDialogVisible(true)
+                        showA11yBlockDlg = true
                     } else {
                         vm.setBlockA11yAppListEnabled(false)
                     }
@@ -525,7 +532,7 @@ fun useSettingsPage(): ScaffoldExt {
                 mainVm.navigatePage(AdvancedPageRoute)
             })
             SettingItem(title = "备份恢复", onClick = {
-                vm.setBackupDialogVisible(true)
+                showBackupDialog = true
             })
 
             SettingItem(title = "关于", onClick = {
@@ -570,7 +577,7 @@ private fun BlockA11yDialog(
                     TextButton(
                         enabled = privilegeContext != null && statusRunning && ignoreBatteryOptimizations,
                         onClick = {
-                            actionScope.launchTry {
+                            actionScope.launchUi {
                                 onDismissRequest()
                                 delay(200.milliseconds)
                                 vm.setBlockA11yAppListEnabled(true)
@@ -619,8 +626,14 @@ private fun BlockA11yDialog(
                             enabled = !statusRunning,
                             imageVector = if (statusRunning) PerfIcon.Check else PerfIcon.ArrowForward,
                             onClick = {
-                                actionScope.launchTry {
-                                    StatusService.requestStart(mainVm)
+                                actionScope.launchUi {
+                                    if (mainVm.permissionRequests.ensurePermissions(
+                                            PermissionStates.foregroundServiceSpecialUse,
+                                            PermissionStates.notification,
+                                        )
+                                    ) {
+                                        ServiceController.setStatusEnabled(true)
+                                    }
                                 }
                             },
                         )
@@ -630,7 +643,7 @@ private fun BlockA11yDialog(
                             imageVector = if (ignoreBatteryOptimizations) PerfIcon.Check else PerfIcon.ArrowForward,
                             onClickLabel = "打开忽略电池优化设置页面",
                             onClick = {
-                                actionScope.launchTry {
+                                actionScope.launchUi {
                                     mainVm.permissionRequests.ensurePermissions(
                                         PermissionStates.ignoreBatteryOptimizations,
                                     )
@@ -643,7 +656,7 @@ private fun BlockA11yDialog(
                             imageVector = PerfIcon.OpenInNew,
                             onClickLabel = "打开应用详情页面",
                             onClick = {
-                                openAppDetailsSettings()
+                                IntentUtils.openAppDetailsSettings()
                             },
                         )
                         RequiredTextItem(
@@ -652,11 +665,11 @@ private fun BlockA11yDialog(
                             imageVector = PerfIcon.OpenInNew,
                             onClickLabel = "打开应用详情页面",
                             onClick = {
-                                val inputManager = privilegeContextFlow.value?.inputManager
-                                if (inputManager == null) {
+                                val privilegeContext = privilegeContextFlow.value
+                                if (privilegeContext == null) {
                                     mainVm.navigatePage(PrivilegeServiceRoute)
                                 } else {
-                                    inputManager.keyevent(KeyEvent.KEYCODE_APP_SWITCH)
+                                    privilegeContext.keyevent(KeyEvent.KEYCODE_APP_SWITCH)
                                 }
                             },
                         )

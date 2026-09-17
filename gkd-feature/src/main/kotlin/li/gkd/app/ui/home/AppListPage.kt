@@ -49,7 +49,7 @@ import li.gkd.app.MainActivity
 import li.gkd.app.R
 import li.gkd.app.data.AppInfo
 import li.gkd.app.permission.PermissionStates
-import li.gkd.app.store.storeFlow
+import li.gkd.app.store.AppStore.storeFlow
 import li.gkd.app.ui.AppConfigRoute
 import li.gkd.app.ui.EditBlockAppListRoute
 import li.gkd.app.ui.component.AnimatedIconButton
@@ -77,7 +77,7 @@ import li.gkd.app.util.AppGroupOption
 import li.gkd.app.util.AppSortOption
 import li.gkd.app.util.findOption
 import li.gkd.app.util.getUpDownTransform
-import li.gkd.app.util.launchAsFn
+import li.gkd.app.ui.share.launchUiAction
 import li.gkd.app.util.throttle
 
 @Composable
@@ -173,7 +173,7 @@ fun useAppListPage(): ScaffoldExt {
                         PerfIconButton(
                             imageVector = PerfIcon.WarningAmber,
                             contentDescription = PermissionStates.queryPackages.name + "异常",
-                            onClick = throttle(vm.scope.launchAsFn {
+                            onClick = throttle(vm.scope.launchUiAction {
                                 mainVm.dialogRequests.showMessage(
                                     title = "权限异常",
                                     text = "检测到已授予「${PermissionStates.queryPackages.name}」但实际获取应用数量稀少，已使用其它方式获取但可能不全，在应用列表下拉刷新可重新获取，若无法解决可尝试关闭权限后重新授予或重启设备"
